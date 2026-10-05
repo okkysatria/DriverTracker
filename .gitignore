@@ -1,0 +1,41 @@
+# Gradle and Android build output
+.gradle/
+**/build/
+.kotlin/
+.externalNativeBuild/
+.cxx/
+captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Machine-specific Android SDK path
+local.properties
+
+# Android Studio and IntelliJ local state
+*.iml
+.idea/caches/
+.idea/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/deploymentTargetSelector.xml
+
+# Local Codex/agent notes and inspection artifacts
+.agent/
+.apk-elf-check/
+
+# Signing keys and local signing configuration
+*.jks
+*.keystore
+*.p12
+keystore.properties
+
+# Logs, crash dumps, and OS metadata
+*.log
+*.hprof
+.DS_Store
+Thumbs.db
