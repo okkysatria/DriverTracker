@@ -6,6 +6,7 @@
 .cxx/
 captures/
 *.apk
+*.idsig
 *.aab
 *.ap_
 *.dex
