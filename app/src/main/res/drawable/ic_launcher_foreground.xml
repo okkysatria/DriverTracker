@@ -4,12 +4,10 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Location pin -->
     <path
         android:fillColor="#FFFFFFFF"
         android:pathData="M54,17 C38,17 26,29.5 26,45 C26,65 54,91 54,91 C54,91 82,65 82,45 C82,29.5 70,17 54,17 Z" />
 
-    <!-- Route marker -->
     <path
         android:fillColor="#FF075A2A"
         android:pathData="M54,31 A14,14 0,1 0,54 59 A14,14 0,1 0,54 31 Z" />

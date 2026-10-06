@@ -45,6 +45,7 @@ fun SaveOrderDialog(
     var selectedCategory by remember { mutableStateOf(initialJenisOrder) }
     var incomeInput by remember { mutableStateOf("") }
     var notesInput by remember { mutableStateOf("") }
+    var showIncomeError by remember { mutableStateOf(false) }
 
     val estimasiBensin = remember(totalJarak, konsumsiBbm, hargaBensin, isEstimasiBensinAktif) {
         if (isEstimasiBensinAktif && konsumsiBbm > 0) {
@@ -140,6 +141,7 @@ fun SaveOrderDialog(
                 OutlinedTextField(
                     value = incomeInput,
                     onValueChange = { newValue ->
+                        showIncomeError = false
                         val digits = newValue.filter { it.isDigit() }.take(9)
                         incomeInput = if (digits.startsWith("0") && digits.length > 1) {
                             digits.trimStart('0')
@@ -164,6 +166,13 @@ fun SaveOrderDialog(
                     } else null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
+                    isError = showIncomeError && (!parsedIncome.isFinite() || parsedIncome <= 0.0),
+                    supportingText = {
+                        Text(
+                            text = if (showIncomeError) "Masukkan pendapatan lebih dari Rp0." else "Wajib diisi sebelum pesanan disimpan.",
+                            color = if (showIncomeError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -239,44 +248,34 @@ fun SaveOrderDialog(
                             }
                             Text(durStr, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
-                    }
-                }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFFFF8E1)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFFFDB813),
-                            modifier = Modifier.size(40.dp)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.LocalGasStation,
-                                contentDescription = "BBM",
-                                tint = Color.Black,
-                                modifier = Modifier.padding(8.dp)
-                            )
-                        }
-                        Column {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.LocalGasStation,
+                                    contentDescription = "BBM",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(6.dp)
+                                )
+                            }
                             Text(
-                                text = "Biaya Bensin",
-                                fontSize = 12.sp,
-                                color = Color(0xFF5D4037)
+                                text = "Biaya bensin",
+                                modifier = Modifier.weight(1f).padding(start = 10.dp),
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = estimasiBensin.toRupiahString(),
-                                fontSize = 18.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF3E2723)
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -295,20 +294,28 @@ fun SaveOrderDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedButton(
+                    FilledTonalButton(
                         onClick = onDismiss,
                         enabled = !isSaving,
                         modifier = Modifier
                             .weight(1f)
                             .height(52.dp),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     ) {
                         Text("Batal")
                     }
 
                     Button(
                         onClick = {
-                            onSaveOrder(selectedCategory, parsedIncome, notesInput, estimasiBensin)
+                            if (!parsedIncome.isFinite() || parsedIncome <= 0.0) {
+                                showIncomeError = true
+                            } else {
+                                onSaveOrder(selectedCategory, parsedIncome, notesInput, estimasiBensin)
+                            }
                         },
                         enabled = !isSaving,
                         modifier = Modifier

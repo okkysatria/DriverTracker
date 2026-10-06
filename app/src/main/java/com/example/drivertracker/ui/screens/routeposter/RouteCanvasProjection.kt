@@ -12,7 +12,6 @@ data class ProjectedRoutePoint(
     val speed: Float
 )
 
-/** Fits recorded GPS coordinates into the unobstructed poster area. */
 object RouteCanvasProjection {
     private const val EARTH_RADIUS_METERS = 6_371_000.0
     private const val MIN_ROUTE_EXTENT_METERS = 1.0
@@ -57,8 +56,6 @@ object RouteCanvasProjection {
         val targetHeight = (bottom - top).coerceAtLeast(1f) * FIT_MARGIN
         val targetAspect = targetWidth / targetHeight
 
-        // Give a flat or stationary track a virtual extent only on the missing axis.
-        // This keeps it centered without shrinking the route because of a fake degree range.
         val effectiveWidth: Double
         val effectiveHeight: Double
         when {

@@ -81,7 +81,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.play.services.location)
     implementation(libs.osmdroid.android)
-    implementation(libs.uber.h3)
     implementation(libs.onnxruntime.android)
     implementation(libs.retrofit)
     testImplementation(libs.androidx.core)

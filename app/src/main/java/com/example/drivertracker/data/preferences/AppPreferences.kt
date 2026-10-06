@@ -26,10 +26,6 @@ class AppPreferences(private val context: Context) {
         val KEY_PERSEN_KOMISI = floatPreferencesKey("persen_komisi")
         val KEY_IS_ESTIMASI_BENSIN_AKTIF = booleanPreferencesKey("is_estimasi_bensin_aktif")
         val KEY_DRIVER_NAME = stringPreferencesKey("driver_name")
-        val KEY_RADAR_SHOW_HISTORY = booleanPreferencesKey("radar_show_history")
-        val KEY_RADAR_SHOW_AI = booleanPreferencesKey("radar_show_ai")
-        val KEY_CUSTOM_ONNX_MODEL_NAME = stringPreferencesKey("custom_onnx_model_name")
-        val KEY_CUSTOM_ONNX_MODEL_PATH = stringPreferencesKey("custom_onnx_model_path")
 
         val KEY_POSTER_SHOW_APP_NAME = booleanPreferencesKey("poster_show_app_name")
         val KEY_POSTER_SHOW_DRIVER_NAME = booleanPreferencesKey("poster_show_driver_name")
@@ -95,22 +91,6 @@ class AppPreferences(private val context: Context) {
 
     val driverName: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[KEY_DRIVER_NAME] ?: ""
-    }
-
-    val radarShowHistory: Flow<Boolean> = context.dataStore.data.map { preferences ->
-        preferences[KEY_RADAR_SHOW_HISTORY] ?: true
-    }
-
-    val radarShowAi: Flow<Boolean> = context.dataStore.data.map { preferences ->
-        preferences[KEY_RADAR_SHOW_AI] ?: true
-    }
-
-    val customOnnxModelName: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[KEY_CUSTOM_ONNX_MODEL_NAME] ?: ""
-    }
-
-    val customOnnxModelPath: Flow<String> = context.dataStore.data.map { preferences ->
-        preferences[KEY_CUSTOM_ONNX_MODEL_PATH] ?: ""
     }
 
     val posterShowAppName: Flow<Boolean> = context.dataStore.data.map { preferences ->
@@ -207,32 +187,6 @@ class AppPreferences(private val context: Context) {
     suspend fun setDriverName(name: String) {
         context.dataStore.edit { preferences ->
             preferences[KEY_DRIVER_NAME] = name
-        }
-    }
-
-    suspend fun setRadarShowHistory(show: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[KEY_RADAR_SHOW_HISTORY] = show
-        }
-    }
-
-    suspend fun setRadarShowAi(show: Boolean) {
-        context.dataStore.edit { preferences ->
-            preferences[KEY_RADAR_SHOW_AI] = show
-        }
-    }
-
-    suspend fun setCustomOnnxModel(name: String, path: String) {
-        context.dataStore.edit { preferences ->
-            preferences[KEY_CUSTOM_ONNX_MODEL_NAME] = name
-            preferences[KEY_CUSTOM_ONNX_MODEL_PATH] = path
-        }
-    }
-
-    suspend fun clearCustomOnnxModel() {
-        context.dataStore.edit { preferences ->
-            preferences.remove(KEY_CUSTOM_ONNX_MODEL_NAME)
-            preferences.remove(KEY_CUSTOM_ONNX_MODEL_PATH)
         }
     }
 

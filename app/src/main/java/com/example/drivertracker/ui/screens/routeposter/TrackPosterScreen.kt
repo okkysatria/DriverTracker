@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.asImageBitmap
@@ -40,11 +42,18 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.zIndex
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.drivertracker.data.local.entity.OrderRecord
 import com.example.drivertracker.data.model.GpsPoint
 import com.example.drivertracker.ui.MainViewModel
+import com.example.drivertracker.ui.components.DriverTrackerScaffold
+import com.example.drivertracker.ui.components.pageContentPadding
 import com.example.drivertracker.ui.screens.settings.PosterSettingsContent
 import com.example.drivertracker.ui.utils.toRupiahString
 import org.json.JSONArray
@@ -52,6 +61,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,6 +138,7 @@ fun TrackPosterScreen(
     var showPosterSettings by remember { mutableStateOf(false) }
     var showRouteMenu by remember { mutableStateOf(false) }
     var showAspectMenu by remember { mutableStateOf(false) }
+    var selectedPosterGroup by remember { mutableStateOf<PosterGroup?>(null) }
     val selectedCustomDateMillis = posterDraft.selectedCustomDateMillis
     val selectedAspectRatio = posterDraft.selectedAspectRatio
     val selectedPreset = posterDraft.selectedPreset
@@ -135,6 +146,9 @@ fun TrackPosterScreen(
     val photoScale = posterDraft.photoScale
     val photoOffsetX = posterDraft.photoOffsetX
     val photoOffsetY = posterDraft.photoOffsetY
+    val todayDateKey = remember {
+        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -166,9 +180,12 @@ fun TrackPosterScreen(
         todayOrderCount, todayTotalDistance, durationSeconds, driverName
     ) {
         if (selectedDateMode == "LIVE") {
-
+            val savedTodayOrders = allOrders.filter { it.tanggal == todayDateKey }
+            val savedTodayPoints = savedTodayOrders.flatMap { parseGpsPointsFromJson(it.trackGpsJson) }
+            val savedTodayRoute = savedTodayPoints.sortedBy { it.time }
+            val routePoints = if (savedTodayRoute.size >= 2) savedTodayRoute else liveGpsPoints
             val avgSpd = if (durationSeconds > 0) ((todayTotalDistance / (durationSeconds / 3600.0)).toFloat()) else 0f
-            val maxSpd = liveGpsPoints.maxOfOrNull { it.speed } ?: avgSpd
+            val maxSpd = routePoints.maxOfOrNull { it.speed } ?: avgSpd
             val dateStr = SimpleDateFormat("dd MMM yyyy", Locale.forLanguageTag("id-ID")).format(Date())
 
             PosterData(
@@ -179,13 +196,13 @@ fun TrackPosterScreen(
                 maxSpeedKmH = maxSpd,
                 netProfit = todayNetIncome,
                 orderCount = todayOrderCount,
-                gpsPoints = liveGpsPoints,
+                gpsPoints = routePoints,
                 dateFormatted = dateStr
             )
         } else {
 
             val dayOrders = allOrders.filter { it.tanggal == selectedDateMode }
-            val mergedPoints = dayOrders.flatMap { parseGpsPointsFromJson(it.trackGpsJson) }
+            val mergedPoints = dayOrders.flatMap { parseGpsPointsFromJson(it.trackGpsJson) }.sortedBy { it.time }
             val totalDist = dayOrders.sumOf { it.jarakTempuh }
             val totalDur = dayOrders.sumOf { it.durasi }
             val totalProfit = dayOrders.sumOf { it.pendapatanBersih }
@@ -206,43 +223,33 @@ fun TrackPosterScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "Poster Rute",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = Color(0xFF00AA13).copy(alpha = 0.15f)
+    DriverTrackerScaffold(
+        title = "Poster Rute",
+        modifier = modifier,
+        actions = {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clickable { showPosterSettings = true },
+                contentAlignment = Alignment.Center
             ) {
-                IconButton(
-                    onClick = { showPosterSettings = true },
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Menu,
-                        contentDescription = "Pengaturan poster",
-                        tint = Color(0xFF00AA13)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Rounded.Menu,
+                    contentDescription = "Pengaturan poster",
+                    tint = Color(0xFF00AA13),
+                    modifier = Modifier.size(23.dp)
+                )
             }
         }
+    ) { scaffoldPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .pageContentPadding(scaffoldPadding)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
 
         val dateLabel = remember(selectedDateMode, allOrders) {
             if (selectedDateMode != "LIVE" && selectedDateMode.isNotBlank()) {
@@ -345,7 +352,7 @@ fun TrackPosterScreen(
             DatePickerDialog(
                 onDismissRequest = { showDatePickerDialog = false },
                 confirmButton = {
-                    TextButton(
+                        TextButton(
                         onClick = {
                             datePickerState.selectedDateMillis?.let { millis ->
                                 val formattedDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply {
@@ -384,18 +391,6 @@ fun TrackPosterScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
 
-                if (selectedPreset == PosterPreset.CUSTOM_PHOTO) {
-                    TextButton(
-                        onClick = {
-                            viewModel.updatePosterDraft {
-                                it.copy(photoScale = 1f, photoOffsetX = 0f, photoOffsetY = 0f)
-                            }
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text("Atur ulang posisi", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -447,7 +442,15 @@ fun TrackPosterScreen(
             shape = RoundedCornerShape(24.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val posterWidth = maxWidth
+                val posterHeight = maxHeight
+                val density = LocalDensity.current
+                val posterWidthPx = with(density) { posterWidth.toPx() }
+                val posterHeightPx = with(density) { posterHeight.toPx() }
+                val headerTransform = posterDraft.headerTransform.withStoryPosition(selectedAspectRatio, PosterGroup.HEADER)
+                val routeTransform = posterDraft.routeTransform
+                val statsTransform = posterDraft.statsTransform.withStoryPosition(selectedAspectRatio, PosterGroup.STATS)
                 RouteCanvasView(
                     gpsPoints = posterData.gpsPoints,
                     preset = selectedPreset,
@@ -458,6 +461,22 @@ fun TrackPosterScreen(
                     photoScale = photoScale,
                     photoOffsetX = photoOffsetX,
                     photoOffsetY = photoOffsetY,
+                    routeTransform = routeTransform,
+                    routeSelected = selectedPosterGroup == PosterGroup.ROUTE && posterShowRouteLine,
+                    onRouteTap = {
+                        if (posterShowRouteLine) {
+                            selectedPosterGroup = if (selectedPosterGroup == PosterGroup.ROUTE) null else PosterGroup.ROUTE
+                        }
+                    },
+                    onRouteDrag = { delta ->
+                        viewModel.updatePosterDraft { draft -> draft.copy(routeTransform = draft.routeTransform.copy(
+                            offsetX = (draft.routeTransform.offsetX + delta.x / posterWidthPx).coerceIn(-0.8f, 0.8f),
+                            offsetY = (draft.routeTransform.offsetY + delta.y / posterHeightPx).coerceIn(-0.8f, 0.8f)
+                        )) }
+                    },
+                    onRouteResize = { delta ->
+                        viewModel.updatePosterDraft { draft -> draft.copy(routeTransform = draft.routeTransform.withScaleDelta(delta, posterWidthPx)) }
+                    },
                     onTransformChanged = { scale, offX, offY ->
                         viewModel.updatePosterDraft {
                             it.copy(photoScale = scale, photoOffsetX = offX, photoOffsetY = offY)
@@ -467,12 +486,39 @@ fun TrackPosterScreen(
                 )
 
                 val isLightTheme = selectedPreset == PosterPreset.LIGHT
-                if (posterShowAppName || posterShowDriverName) {
-                    Column(
+                if (posterShowAppName || posterShowDriverName || posterData.dateFormatted.isNotBlank()) {
+                    Row(
                         modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(16.dp)
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .offset(
+                                x = (headerTransform.offsetX * posterWidth.value).dp,
+                                y = (headerTransform.offsetY * posterHeight.value).dp
+                            )
+                            .graphicsLayer {
+                                scaleX = headerTransform.scale
+                                scaleY = headerTransform.scale
+                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center
+                            }
+                            .posterGroupGestures(
+                                selected = selectedPosterGroup == PosterGroup.HEADER,
+                                onTap = { selectedPosterGroup = if (selectedPosterGroup == PosterGroup.HEADER) null else PosterGroup.HEADER },
+                                onDrag = { delta ->
+                                    viewModel.updatePosterDraft { draft ->
+                                        draft.copy(headerTransform = draft.headerTransform.copy(
+                                            offsetX = (draft.headerTransform.offsetX + delta.x / posterWidthPx).coerceIn(-0.8f, 0.8f),
+                                            offsetY = (draft.headerTransform.offsetY + delta.y / posterHeightPx).coerceIn(-0.8f, 0.8f)
+                                        ))
+                                    }
+                                }
+                            )
+                            .zIndex(1f)
+                            .then(if (selectedPosterGroup == PosterGroup.HEADER) Modifier.border(1.dp, Color(0xFF00AA13) ) else Modifier)
+                            .padding(horizontal = 16.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.Top
                     ) {
+                        Column(modifier = Modifier.weight(1f)) {
                         if (posterShowAppName) {
                             PosterPreviewText(
                                 text = "DRIVER TRACKER",
@@ -491,26 +537,51 @@ fun TrackPosterScreen(
                                 effects = posterEffects
                             )
                         }
+                        }
+                        if (posterData.dateFormatted.isNotBlank()) {
+                            PosterPreviewText(
+                                text = posterData.dateFormatted,
+                                fontSize = 11.sp,
+                                color = if (isLightTheme) Color(0xFF718096) else Color.White.copy(alpha = 0.8f),
+                                effects = posterEffects,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                        if (selectedPosterGroup == PosterGroup.HEADER) {
+                            PosterResizeHandle(modifier = Modifier.align(Alignment.Bottom)) {
+                                viewModel.updatePosterDraft { draft ->
+                                    draft.copy(headerTransform = draft.headerTransform.withScaleDelta(it, posterWidthPx))
+                                }
+                            }
+                        }
                     }
-                }
-
-                PosterPreviewText(
-                    text = posterData.dateFormatted,
-                    fontSize = 11.sp,
-                    color = if (isLightTheme) Color(0xFF718096) else Color.White.copy(alpha = 0.8f),
-                    effects = posterEffects,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                )
 
                 val hasAnyBottomStats = posterShowDistance || posterShowIncome || posterShowDuration || posterShowAvgSpeed || posterShowMaxSpeed
                 if (hasAnyBottomStats) {
-                    Surface(
+                    Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(12.dp)
+                            .offset(
+                                x = (statsTransform.offsetX * posterWidth.value).dp,
+                                y = (statsTransform.offsetY * posterHeight.value).dp
+                            )
+                            .graphicsLayer { scaleX = statsTransform.scale; scaleY = statsTransform.scale }
+                            .posterGroupGestures(
+                                selected = selectedPosterGroup == PosterGroup.STATS,
+                                onTap = { selectedPosterGroup = if (selectedPosterGroup == PosterGroup.STATS) null else PosterGroup.STATS },
+                                onDrag = { delta ->
+                                    viewModel.updatePosterDraft { draft -> draft.copy(statsTransform = draft.statsTransform.copy(
+                                        offsetX = (draft.statsTransform.offsetX + delta.x / posterWidthPx).coerceIn(-0.8f, 0.8f),
+                                        offsetY = (draft.statsTransform.offsetY + delta.y / posterHeightPx).coerceIn(-0.8f, 0.8f)
+                                    )) }
+                                }
+                            )
+                            .then(if (selectedPosterGroup == PosterGroup.STATS) Modifier.border(1.dp, Color(0xFF00AA13), RoundedCornerShape(16.dp)) else Modifier),
+                    ) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
                         color = Color(0xDD0F141C),
                         shadowElevation = 4.dp
@@ -598,9 +669,67 @@ fun TrackPosterScreen(
                             }
                         }
                     }
+                    if (selectedPosterGroup == PosterGroup.STATS) {
+                        PosterResizeHandle(modifier = Modifier.align(Alignment.BottomEnd)) { delta ->
+                            viewModel.updatePosterDraft { draft -> draft.copy(statsTransform = draft.statsTransform.withScaleDelta(delta, posterWidthPx)) }
+                        }
+                    }
+                    }
                 }
             }
         }
+        }
+
+        val hasEditedElements = !posterDraft.headerTransform.isDefault() ||
+            !posterDraft.routeTransform.isDefault() || !posterDraft.statsTransform.isDefault()
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Button(
+                onClick = {
+                    viewModel.updatePosterDraft {
+                        it.copy(photoScale = 1f, photoOffsetX = 0f, photoOffsetY = 0f)
+                    }
+                },
+                modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00AA13))
+            ) {
+                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Atur ulang foto", fontSize = 11.sp, maxLines = 1)
+            }
+
+            Button(
+                onClick = {
+                    viewModel.updatePosterDraft {
+                        it.copy(
+                            headerTransform = PosterGroupTransform(),
+                            routeTransform = PosterGroupTransform(),
+                            statsTransform = PosterGroupTransform()
+                        )
+                    }
+                },
+                enabled = hasEditedElements,
+                modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00AA13))
+            ) {
+                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Atur ulang elemen", fontSize = 11.sp, maxLines = 1)
+            }
+        }
+
+        Text(
+            text = "Ketuk judul, rute, atau statistik untuk memilih. Seret untuk memindahkan. Tarik ikon garis di sudut kanan bawah bagian terpilih untuk mengubah ukuran. Ketuk lagi untuk selesai.",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -620,7 +749,10 @@ fun TrackPosterScreen(
                         data = posterData,
                         visibility = elementVisibility,
                         routeLineColor = posterRouteLineColor,
-                        effects = posterEffects
+                        effects = posterEffects,
+                        headerTransform = posterDraft.headerTransform.withStoryPosition(selectedAspectRatio, PosterGroup.HEADER),
+                        routeTransform = posterDraft.routeTransform,
+                        statsTransform = posterDraft.statsTransform.withStoryPosition(selectedAspectRatio, PosterGroup.STATS)
                     )
                     val isTrans = selectedPreset == PosterPreset.TRANSPARENT
                     val uri = saveBitmapToGallery(context, bitmap, "DriverTracker_Poster_${System.currentTimeMillis()}")
@@ -645,25 +777,6 @@ fun TrackPosterScreen(
                 )
             }
 
-            OutlinedButton(
-                onClick = {
-                    exportGpxFile(context, posterData)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 50.dp),
-                shape = RoundedCornerShape(16.dp),
-                enabled = posterData.gpsPoints.size >= 2
-            ) {
-                Icon(imageVector = Icons.Rounded.Polyline, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    if (posterData.gpsPoints.size >= 2) "Ekspor rute GPX" else "Rute GPS belum tersedia",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
             Button(
                 onClick = {
                     val bitmap = PosterBitmapGenerator.generateBitmap(
@@ -677,7 +790,10 @@ fun TrackPosterScreen(
                         data = posterData,
                         visibility = elementVisibility,
                         routeLineColor = posterRouteLineColor,
-                        effects = posterEffects
+                        effects = posterEffects,
+                        headerTransform = posterDraft.headerTransform.withStoryPosition(selectedAspectRatio, PosterGroup.HEADER),
+                        routeTransform = posterDraft.routeTransform,
+                        statsTransform = posterDraft.statsTransform.withStoryPosition(selectedAspectRatio, PosterGroup.STATS)
                     )
                     sharePosterImage(context, bitmap)
                 },
@@ -692,6 +808,7 @@ fun TrackPosterScreen(
                 Text("Bagikan gambar", fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
         }
+        }
     }
 
     if (showPosterSettings) {
@@ -699,21 +816,25 @@ fun TrackPosterScreen(
             onDismissRequest = { showPosterSettings = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ) {
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(0.9f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .imePadding(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    text = "Pengaturan poster rute",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                PosterSettingsContent(viewModel)
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Pengaturan poster rute",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        PosterSettingsContent(viewModel)
+                    }
+                }
             }
         }
     }
@@ -832,61 +953,6 @@ private fun sharePosterImage(context: Context, bitmap: Bitmap) {
     }
 }
 
-private fun exportGpxFile(context: Context, data: PosterData) {
-    try {
-        val points = data.gpsPoints
-        if (points.size < 2) {
-            Toast.makeText(context, "Belum ada rute GPS untuk diekspor", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val sb = StringBuilder()
-        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-        sb.append("<gpx version=\"1.1\" creator=\"DriverTracker\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
-        sb.append("  <trk>\n")
-        sb.append("    <name>Driver Tracker - ").append(data.driverName).append("</name>\n")
-        sb.append("    <trkseg>\n")
-
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-        sdf.timeZone = TimeZone.getTimeZone("UTC")
-
-        for (p in points) {
-            sb.append("      <trkpt lat=\"").append(p.lat).append("\" lon=\"").append(p.lng).append("\">\n")
-            if (p.time > 0) {
-                sb.append("        <time>").append(sdf.format(Date(p.time))).append("</time>\n")
-            }
-            if (p.speed > 0) {
-                val speedMs = p.speed / 3.6
-                sb.append("        <speed>").append(String.format(Locale.US, "%.2f", speedMs)).append("</speed>\n")
-            }
-            sb.append("      </trkpt>\n")
-        }
-
-        sb.append("    </trkseg>\n")
-        sb.append("  </trk>\n")
-        sb.append("</gpx>")
-
-        val gpxContent = sb.toString()
-
-        val cachePath = File(context.cacheDir, "gpx")
-        cachePath.mkdirs()
-        val file = File(cachePath, "route_track.gpx")
-        file.writeText(gpxContent)
-
-        val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/gpx+xml"
-            putExtra(Intent.EXTRA_STREAM, contentUri)
-            putExtra(Intent.EXTRA_SUBJECT, "Export Rute GPX Driver Tracker")
-            putExtra(Intent.EXTRA_TEXT, "File GPX rute perjalanan dari Driver Tracker.")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(Intent.createChooser(shareIntent, "Bagikan file rute GPX"))
-    } catch (e: Exception) {
-        Toast.makeText(context, "Gagal mengekspor GPX: ${e.message}", Toast.LENGTH_SHORT).show()
-    }
-}
-
 private fun loadRotatedBitmap(context: Context, uri: Uri): Bitmap? {
     return try {
         val inputStream = context.contentResolver.openInputStream(uri)
@@ -920,4 +986,96 @@ private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
         bitmap.recycle()
     }
     return rotated
+}
+
+private enum class PosterGroup { HEADER, ROUTE, STATS }
+
+private fun PosterGroupTransform.withStoryPosition(
+    aspectRatio: PosterAspectRatio,
+    group: PosterGroup
+): PosterGroupTransform {
+    if (aspectRatio != PosterAspectRatio.STORY_9_16) return this
+    val storyOffset = when (group) {
+        PosterGroup.HEADER -> 0.045f
+        PosterGroup.STATS -> -0.045f
+        PosterGroup.ROUTE -> 0f
+    }
+    return copy(offsetY = offsetY + storyOffset)
+}
+
+private fun PosterGroupTransform.withScaleDelta(delta: Offset, canvasWidthPx: Float): PosterGroupTransform =
+    copy(scale = (scale + delta.x / canvasWidthPx).coerceIn(0.5f, 2.5f))
+
+private fun PosterGroupTransform.isDefault(): Boolean =
+    abs(offsetX) <= 0.001f && abs(offsetY) <= 0.001f && abs(scale - 1f) <= 0.001f
+
+private fun Modifier.posterGroupGestures(
+    selected: Boolean,
+    onTap: () -> Unit,
+    onDrag: (Offset) -> Unit
+): Modifier = this
+    .pointerInput(selected) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            var previousPosition = down.position
+            var accumulatedDrag = Offset.Zero
+            var dragging = false
+            var multiTouch = false
+
+            while (true) {
+                val event = awaitPointerEvent()
+                val pressed = event.changes.filter { it.pressed }
+                if (pressed.size > 1) multiTouch = true
+
+                if (multiTouch) {
+                    if (pressed.isEmpty()) break
+                    continue
+                }
+
+                val change = event.changes.firstOrNull { it.id == down.id }
+                if (change == null || !change.pressed) {
+                    if (!dragging && pressed.isEmpty()) onTap()
+                    break
+                }
+
+                val delta = change.position - previousPosition
+                previousPosition = change.position
+                accumulatedDrag += delta
+                if (!dragging && accumulatedDrag.getDistance() > viewConfiguration.touchSlop) {
+                    dragging = true
+                    if (selected) {
+                        change.consume()
+                        onDrag(accumulatedDrag)
+                    }
+                } else if (dragging && selected) {
+                    change.consume()
+                    onDrag(delta)
+            }
+        }
+    }
+    }
+
+@Composable
+private fun PosterResizeHandle(
+    modifier: Modifier = Modifier,
+    onResize: (Offset) -> Unit
+) {
+    Box(
+        modifier = modifier
+            .size(24.dp)
+            .background(Color(0xFF00AA13), RoundedCornerShape(8.dp))
+            .pointerInput(Unit) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    onResize(dragAmount)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.foundation.Canvas(Modifier.size(14.dp)) {
+            val stroke = 1.8.dp.toPx()
+            drawLine(Color.White, Offset(size.width * 0.25f, size.height * 0.75f), Offset(size.width * 0.75f, size.height * 0.25f), stroke)
+            drawLine(Color.White, Offset(size.width * 0.42f, size.height * 0.75f), Offset(size.width * 0.75f, size.height * 0.42f), stroke)
+        }
+    }
 }

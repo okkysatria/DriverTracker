@@ -32,10 +32,13 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.drivertracker.ui.MainViewModel
+import com.example.drivertracker.ml.RadarOnnxManager
 import com.example.drivertracker.ui.utils.RupiahVisualTransformation
 import com.example.drivertracker.ui.utils.parseRupiahToDouble
 import com.example.drivertracker.ui.utils.toRupiahString
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
@@ -55,24 +58,31 @@ fun SettingsScreen(
     val isEstimasiBensinAktif by viewModel.isEstimasiBensinAktif.collectAsStateWithLifecycle()
     val isKomisiAktif by viewModel.isKomisiAktif.collectAsStateWithLifecycle()
     val persenKomisi by viewModel.persenKomisi.collectAsStateWithLifecycle()
-    val driverName by viewModel.driverName.collectAsStateWithLifecycle()
-
     var konsumsiInput by remember(konsumsiBbm) { mutableStateOf(konsumsiBbm.toString()) }
     var hargaInput by remember(hargaBensin) {
         mutableStateOf(if (hargaBensin > 0) hargaBensin.toLong().toString() else "")
     }
     var persenKomisiInput by remember(persenKomisi) { mutableStateOf(persenKomisi.toInt().toString()) }
-    var driverNameInput by remember(driverName) { mutableStateOf(driverName) }
 
     var showDeleteStep1Dialog by remember { mutableStateOf(false) }
     var showDeleteStep2Dialog by remember { mutableStateOf(false) }
+    var radarModelRefresh by remember { mutableIntStateOf(0) }
+    var radarModelMessage by remember { mutableStateOf("") }
+    val hasRadarModel by produceState(initialValue = false, radarModelRefresh) {
+        value = withContext(Dispatchers.IO) { RadarOnnxManager.hasModel(context) }
+    }
 
-    val showRadarHistory by viewModel.showRadarHistory.collectAsStateWithLifecycle()
-    val showRadarAi by viewModel.showRadarAi.collectAsStateWithLifecycle()
-    val customOnnxModelName by viewModel.customOnnxModelName.collectAsStateWithLifecycle()
-
-    var isImportingOnnx by remember { mutableStateOf(false) }
-    var onnxImportMessage by remember { mutableStateOf("") }
+    val importRadarModelLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { modelUri ->
+            coroutineScope.launch {
+                val result = withContext(Dispatchers.IO) { RadarOnnxManager.importModel(context, modelUri) }
+                radarModelMessage = result.exceptionOrNull()?.message ?: "Model Radar berhasil dimuat."
+                if (result.isSuccess) radarModelRefresh++
+            }
+        }
+    }
 
     val importJsonLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -93,39 +103,6 @@ fun SettingsScreen(
                     }
                 } catch (e: Exception) {
                     Toast.makeText(context, "Gagal mengimpor file backup JSON: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    val importOnnxLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            coroutineScope.launch {
-                isImportingOnnx = true
-                onnxImportMessage = ""
-                try {
-                    val fileName = context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
-                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        cursor.moveToFirst()
-                        if (nameIndex >= 0) cursor.getString(nameIndex) else "model.onnx"
-                    } ?: "model.onnx"
-
-                    val result = viewModel.importOnnxModel(context, it, fileName)
-                    if (result.isSuccess) {
-                        val info = result.getOrThrow()
-                        onnxImportMessage = "Model berhasil diimpor.\n${info.fileName} (${info.fileSizeFormatted})"
-                        Toast.makeText(context, "Model ONNX berhasil diimpor!", Toast.LENGTH_SHORT).show()
-                    } else {
-                        onnxImportMessage = "Gagal mengimpor model: ${result.exceptionOrNull()?.message}"
-                        Toast.makeText(context, "Gagal mengimpor model: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
-                    }
-                } catch (e: Exception) {
-                    onnxImportMessage = "Gagal mengimpor model: ${e.message}"
-                    Toast.makeText(context, "Terjadi kesalahan: ${e.message}", Toast.LENGTH_SHORT).show()
-                } finally {
-                    isImportingOnnx = false
                 }
             }
         }
@@ -162,11 +139,6 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    text = "Atur tampilan, GPS, biaya, dan data aplikasi",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -211,20 +183,6 @@ fun SettingsScreen(
                     )
                 }
 
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                OutlinedTextField(
-                    value = driverNameInput,
-                    onValueChange = {
-                        driverNameInput = it
-                        viewModel.setDriverName(it)
-                    },
-                    label = { Text("Nama pengemudi") },
-                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                )
             }
         }
 
@@ -551,267 +509,44 @@ fun SettingsScreen(
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Radar,
-                        contentDescription = null,
-                        tint = Color(0xFF00AA13)
-                    )
-                    Text(
-                        text = "Pengaturan radar",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                Text("Model prediksi Radar", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (hasRadarModel) "Model ONNX sudah dimuat." else "Muat file ONNX untuk mengaktifkan pin prediksi.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (radarModelMessage.isNotBlank()) {
+                    Text(radarModelMessage, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                 }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Grain,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "Tampilkan hotspot di peta",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Berdasarkan riwayat pesanan dan lokasi",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Switch(
-                        checked = showRadarAi,
-                        onCheckedChange = { viewModel.setRadarShowAi(it) },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00AA13))
-                    )
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.History,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "Tampilkan riwayat pesanan",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Tampilkan lokasi pesanan sebelumnya",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Switch(
-                        checked = showRadarHistory,
-                        onCheckedChange = { viewModel.setRadarShowHistory(it) },
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF00AA13))
-                    )
-                }
-            }
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Memory,
-                        contentDescription = null,
-                        tint = Color(0xFF1E88E5)
-                    )
-                    Column {
-                        Text(
-                            text = "Model analisis (ONNX)",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Impor model dari riwayat pesanan",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                if (customOnnxModelName.isNotBlank()) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1E88E5).copy(alpha = 0.10f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.CheckCircle,
-                                contentDescription = null,
-                                tint = Color(0xFF1E88E5),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Column {
-                                Text(
-                                    text = "Model aktif",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1E88E5)
-                                )
-                                Text(
-                                    text = customOnnxModelName,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Info,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                            text = "Model belum tersedia. Menggunakan metode bawaan.",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-
-                if (onnxImportMessage.isNotBlank()) {
-                    Text(
-                        text = onnxImportMessage,
-                        fontSize = 12.sp,
-                        color = if (onnxImportMessage.startsWith("Model berhasil")) Color(0xFF1E88E5) else MaterialTheme.colorScheme.error
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = { importOnnxLauncher.launch("*/*") },
+                        onClick = { importRadarModelLauncher.launch("*/*") },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
-                        enabled = !isImportingOnnx
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        if (isImportingOnnx) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Impor .onnx", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
+                        Icon(Icons.Rounded.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Muat model")
                     }
-
-                    if (customOnnxModelName.isNotBlank()) {
+                    if (hasRadarModel) {
                         OutlinedButton(
                             onClick = {
                                 coroutineScope.launch {
-                                    viewModel.removeOnnxModel(context)
-                                    onnxImportMessage = ""
+                                    val removed = withContext(Dispatchers.IO) { RadarOnnxManager.deleteModel(context) }
+                                    radarModelRefresh++
+                                    radarModelMessage = if (removed) "Model dihapus." else "Model tidak dapat dihapus."
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            border = ButtonDefaults.outlinedButtonBorder(enabled = true).copy(
-                                brush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.error)
-                            )
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(
-                                Icons.Rounded.DeleteForever,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                "Hapus Model",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.error
-                            )
+                            Text("Hapus model")
                         }
                     }
                 }
@@ -913,6 +648,8 @@ private fun shareExportFile(context: Context, content: String, fileName: String,
 
 @Composable
 fun PosterSettingsContent(viewModel: MainViewModel) {
+    val driverName by viewModel.driverName.collectAsStateWithLifecycle()
+    var driverNameInput by remember(driverName) { mutableStateOf(driverName) }
     val posterShowAppName by viewModel.posterShowAppName.collectAsStateWithLifecycle()
     val posterShowDriverName by viewModel.posterShowDriverName.collectAsStateWithLifecycle()
     val posterShowDistance by viewModel.posterShowDistance.collectAsStateWithLifecycle()
@@ -970,6 +707,19 @@ fun PosterSettingsContent(viewModel: MainViewModel) {
                         )
                     }
                 }
+
+                OutlinedTextField(
+                    value = driverNameInput,
+                    onValueChange = {
+                        driverNameInput = it
+                        viewModel.setDriverName(it)
+                    },
+                    label = { Text("Nama pengemudi") },
+                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                )
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
@@ -1032,12 +782,12 @@ fun PosterSettingsContent(viewModel: MainViewModel) {
                         )
                         val colorOptions = listOf(
                             Pair("AUTO", "Otomatis"),
-                            Pair("#22D3EE", "Biru laut"),
-                            Pair("#34D399", "Mint"),
-                            Pair("#818CF8", "Indigo"),
-                            Pair("#C084FC", "Ungu"),
-                            Pair("#FB7185", "Coral"),
-                            Pair("#FBBF24", "Amber"),
+                            Pair("#77AFC2", "Biru lembut"),
+                            Pair("#82B8A3", "Mint lembut"),
+                            Pair("#8B8FC4", "Indigo lembut"),
+                            Pair("#B39AC9", "Ungu lembut"),
+                            Pair("#D48E9B", "Coral lembut"),
+                            Pair("#D0A866", "Amber lembut"),
                             Pair("#F8FAFC", "Putih")
                         )
                         val colorScrollState = rememberScrollState()
@@ -1061,7 +811,7 @@ fun PosterSettingsContent(viewModel: MainViewModel) {
                                                 .size(12.dp)
                                                 .clip(CircleShape)
                                                 .background(
-                                                    if (colorCode == "AUTO") Color(0xFF22D3EE)
+                                                    if (colorCode == "AUTO") Color(0xFF6FAEB8)
                                                     else Color(android.graphics.Color.parseColor(colorCode))
                                                 )
                                         )

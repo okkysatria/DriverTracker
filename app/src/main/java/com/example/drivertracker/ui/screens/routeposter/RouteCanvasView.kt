@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -35,6 +36,11 @@ fun RouteCanvasView(
     showRouteLine: Boolean = true,
     routeLineColor: String = "AUTO",
     effects: PosterEffects = PosterEffects(),
+    routeTransform: PosterGroupTransform = PosterGroupTransform(),
+    routeSelected: Boolean = false,
+    onRouteTap: () -> Unit = {},
+    onRouteDrag: (Offset) -> Unit = {},
+    onRouteResize: (Offset) -> Unit = {},
     customPhotoBitmap: ImageBitmap? = null,
     photoScale: Float = 1f,
     photoOffsetX: Float = 0f,
@@ -46,51 +52,85 @@ fun RouteCanvasView(
     val currentScale by rememberUpdatedState(photoScale)
     val currentOffsetX by rememberUpdatedState(photoOffsetX)
     val currentOffsetY by rememberUpdatedState(photoOffsetY)
+    val currentRouteTransform by rememberUpdatedState(routeTransform)
 
     var canvasWidth by remember { mutableFloatStateOf(1f) }
     var canvasHeight by remember { mutableFloatStateOf(1f) }
 
-    val gestureModifier = if (preset == PosterPreset.CUSTOM_PHOTO && onTransformChanged != null) {
-        modifier.pointerInput(Unit) {
-            awaitEachGesture {
+    val routeCanvasDensity = androidx.compose.ui.platform.LocalDensity.current
+    val routeHandleSizePx = with(routeCanvasDensity) { 24.dp.toPx() }
+    val gestureModifier = modifier.pointerInput(preset, routeSelected, showRouteLine) {
+        val inputWidth = size.width.toFloat().coerceAtLeast(1f)
+        val inputHeight = size.height.toFloat().coerceAtLeast(1f)
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val isStory = inputHeight / inputWidth >= 1.4f
+            val topFraction = if (isStory) 0.14f else 0.15f
+            val bottomFraction = if (isStory) 0.22f else 0.24f
+            val centerX = inputWidth / 2f + currentRouteTransform.offsetX * inputWidth
+            val centerY = (topFraction + 1f - bottomFraction) * inputHeight / 2f + currentRouteTransform.offsetY * inputHeight
+            val zoneWidth = inputWidth * 0.84f * currentRouteTransform.scale
+            val zoneHeight = inputHeight * (1f - topFraction - bottomFraction) * currentRouteTransform.scale
+            val zoneLeft = centerX - zoneWidth / 2f
+            val zoneTop = centerY - zoneHeight / 2f
+            val inRouteZone = showRouteLine && down.position.x in zoneLeft..(zoneLeft + zoneWidth) &&
+                down.position.y in zoneTop..(zoneTop + zoneHeight)
+            val inResizeHandle = routeSelected && inRouteZone &&
+                down.position.x >= zoneLeft + zoneWidth - routeHandleSizePx * 1.5f &&
+                down.position.y >= zoneTop + zoneHeight - routeHandleSizePx * 1.5f
 
-                awaitFirstDown(requireUnconsumed = false)
+            var previousPosition = down.position
+            var accumulatedDrag = Offset.Zero
+            var dragging = false
+            var multiTouch = false
+            var photoScaleValue = currentScale
+            var photoOffsetXValue = currentOffsetX
+            var photoOffsetYValue = currentOffsetY
 
-                var twoFingerActive = false
-                var scale = currentScale
-                var normX = currentOffsetX
-                var normY = currentOffsetY
-
-                while (true) {
-                    val event = awaitPointerEvent()
-                    val pressed = event.changes.filter { it.pressed }
-                    when {
-                        pressed.size >= 2 -> {
-                            twoFingerActive = true
-                            val zoom = event.calculateZoom()
-                            val pan = event.calculatePan()
-
-                            if (kotlin.math.abs(zoom - 1f) > 0.015f) {
-                                scale = (scale * zoom).coerceIn(0.2f, 5.0f)
-                            }
-                            val w = if (canvasWidth > 1f) canvasWidth else 1000f
-                            val h = if (canvasHeight > 1f) canvasHeight else 1000f
-
-                            normX += pan.x / w
-                            normY += pan.y / h
-
-                            onTransformChanged(scale, normX, normY)
-                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+            while (true) {
+                val event = awaitPointerEvent()
+                val pressed = event.changes.filter { it.pressed }
+                if (pressed.size >= 2) {
+                    multiTouch = true
+                    if (preset == PosterPreset.CUSTOM_PHOTO && onTransformChanged != null) {
+                        val zoom = event.calculateZoom()
+                        val pan = event.calculatePan()
+                        if (kotlin.math.abs(zoom - 1f) > 0.015f) {
+                            photoScaleValue = (photoScaleValue * zoom).coerceIn(0.2f, 5.0f)
                         }
-                        pressed.isEmpty() -> break
-                        twoFingerActive && pressed.size < 2 -> break
-                        !twoFingerActive && pressed.size < 2 -> break
+                        photoOffsetXValue += pan.x / inputWidth
+                        photoOffsetYValue += pan.y / inputHeight
+                        onTransformChanged(photoScaleValue, photoOffsetXValue, photoOffsetYValue)
+                        event.changes.forEach { if (it.positionChanged()) it.consume() }
                     }
+                    continue
+                }
+                if (multiTouch) {
+                    if (pressed.isEmpty()) break
+                    continue
+                }
+
+                val change = event.changes.firstOrNull { it.id == down.id }
+                if (change == null || !change.pressed) {
+                    if (!multiTouch && !dragging && inRouteZone && !inResizeHandle) onRouteTap()
+                    break
+                }
+
+                val delta = change.position - previousPosition
+                previousPosition = change.position
+                accumulatedDrag += delta
+                if (!dragging && accumulatedDrag.getDistance() > viewConfiguration.touchSlop) {
+                    dragging = true
+                    if (routeSelected && inRouteZone) {
+                        change.consume()
+                        if (inResizeHandle) onRouteResize(accumulatedDrag) else onRouteDrag(accumulatedDrag)
+                    }
+                } else if (dragging && routeSelected && inRouteZone) {
+                    change.consume()
+                    if (inResizeHandle) onRouteResize(delta) else onRouteDrag(delta)
                 }
             }
         }
-    } else {
-        modifier
     }
 
     Box(modifier = gestureModifier.fillMaxSize()) {
@@ -131,20 +171,28 @@ fun RouteCanvasView(
 
         if (showRouteLine && gpsPoints.size >= 2) {
             val isStoryCanvas = height / width >= 1.4f
+            val padTopFraction = if (isStoryCanvas) 0.14f else 0.15f
+            val padBottomFraction = if (isStoryCanvas) 0.22f else 0.24f
+            val routeCenter = Offset(width / 2f, (padTopFraction + (1f - padBottomFraction)) * height / 2f)
             val mapped = RouteCanvasProjection.project(
                 gpsPoints = gpsPoints,
                 canvasWidth = width,
                 canvasHeight = height,
                 sidePaddingFraction = 0.08f,
-                topPaddingFraction = if (isStoryCanvas) 0.14f else 0.15f,
-                bottomPaddingFraction = if (isStoryCanvas) 0.22f else 0.24f
-            ).map { Offset(it.x, it.y) to it.speed }
+                topPaddingFraction = padTopFraction,
+                bottomPaddingFraction = padBottomFraction
+            ).map {
+                val point = Offset(it.x, it.y)
+                val transformed = routeCenter + (point - routeCenter) * routeTransform.scale +
+                    Offset(routeTransform.offsetX * width, routeTransform.offsetY * height)
+                transformed to it.speed
+            }
 
         val isCustomColor = routeLineColor != "AUTO" && routeLineColor.isNotBlank()
         val customColorParsed = if (isCustomColor) {
-            try { Color(android.graphics.Color.parseColor(routeLineColor)) } catch (_: Exception) { Color(0xFF00E5FF) }
-        } else Color(0xFF00E5FF)
-        val effectScale = width / 360f
+            try { Color(android.graphics.Color.parseColor(routeLineColor)) } catch (_: Exception) { Color(0xFF6FAEB8) }
+        } else Color(0xFF6FAEB8)
+        val effectScale = width / 360f * routeTransform.scale
 
         for (i in 0 until mapped.size - 1) {
             val (p1, s1) = mapped[i]
@@ -155,20 +203,20 @@ fun RouteCanvasView(
                 customColorParsed
             } else {
                 when {
-                    speed < 15f -> Color(0xFFFF3D00)
-                    speed in 15f..30f -> Color(0xFFFFD600)
-                    else -> Color(0xFF00E5FF)
+                    speed < 15f -> Color(0xFFD98983)
+                    speed in 15f..30f -> Color(0xFFD8B968)
+                    else -> Color(0xFF6FAEB8)
                 }
             }
 
             if (effects.routeShadowEnabled) {
                 val shadowColor = parseEffectColor(effects.routeShadowColor, Color.Black)
-                val shadowOffset = effects.routeShadowSize * effectScale * 0.45f
+                val shadowOffset = effects.routeShadowSize * effectScale * 0.3f
                 drawLine(
-                    color = shadowColor.copy(alpha = 0.42f),
+                    color = shadowColor.copy(alpha = 0.24f),
                     start = p1 + Offset(shadowOffset, shadowOffset),
                     end = p2 + Offset(shadowOffset, shadowOffset),
-                    strokeWidth = 6f + effects.routeShadowSize * effectScale * 2f,
+                    strokeWidth = (9f + effects.routeShadowSize * 0.5f) * effectScale,
                     cap = StrokeCap.Round
                 )
             }
@@ -178,17 +226,7 @@ fun RouteCanvasView(
                     color = parseEffectColor(effects.routeOutlineColor, Color.White),
                     start = p1,
                     end = p2,
-                    strokeWidth = 6f + effects.routeOutlineSize * effectScale * 2f,
-                    cap = StrokeCap.Round
-                )
-            }
-
-            if (isCustomColor || speed > 30f) {
-                drawLine(
-                    color = (if (isCustomColor) customColorParsed else Color(0xFF22D3EE)).copy(alpha = 0.24f),
-                    start = p1,
-                    end = p2,
-                    strokeWidth = 14f,
+                    strokeWidth = (10f + effects.routeOutlineSize * 1.5f) * effectScale,
                     cap = StrokeCap.Round
                 )
             }
@@ -197,29 +235,78 @@ fun RouteCanvasView(
                 color = color,
                 start = p1,
                 end = p2,
-                strokeWidth = 6f,
+                strokeWidth = 8f * effectScale,
+                cap = StrokeCap.Round
+            )
+            drawLine(
+                color = Color.White.copy(alpha = 0.16f),
+                start = p1,
+                end = p2,
+                strokeWidth = 1.2f * effectScale,
                 cap = StrokeCap.Round
             )
         }
 
         if (mapped.isNotEmpty()) {
             val startPt = mapped.first().first
-            drawCircle(color = Color.Black.copy(alpha = 0.20f), radius = 10f, center = startPt + Offset(0f, 2f))
-            drawCircle(color = Color(0xFF00E676).copy(alpha = 0.4f), radius = 14f, center = startPt)
-            drawCircle(color = Color(0xFF00E676), radius = 10f, center = startPt)
+            drawCircle(color = Color.Black.copy(alpha = 0.16f), radius = 7.5f * effectScale, center = startPt + Offset(0f, effectScale))
+            drawCircle(color = Color.White.copy(alpha = 0.94f), radius = 7.2f * effectScale, center = startPt)
+            drawCircle(color = Color(0xFF70B99A), radius = 5.2f * effectScale, center = startPt)
         }
 
         if (mapped.size > 1) {
             val endPt = mapped.last().first
-            drawCircle(color = Color.Black.copy(alpha = 0.20f), radius = 10f, center = endPt + Offset(0f, 2f))
-            drawCircle(color = Color(0xFFFF1744).copy(alpha = 0.4f), radius = 14f, center = endPt)
-            drawCircle(color = Color(0xFFFF1744), radius = 10f, center = endPt)
+            drawCircle(color = Color.Black.copy(alpha = 0.16f), radius = 7.5f * effectScale, center = endPt + Offset(0f, effectScale))
+            drawCircle(color = Color.White.copy(alpha = 0.94f), radius = 7.2f * effectScale, center = endPt)
+            drawCircle(color = Color(0xFFD98692), radius = 5.2f * effectScale, center = endPt)
         }
+        }
+
+        if (routeSelected && showRouteLine) {
+            val topFraction = if (height / width >= 1.4f) 0.14f else 0.15f
+            val bottomFraction = if (height / width >= 1.4f) 0.22f else 0.24f
+            val groupCenter = Offset(
+                width / 2f + routeTransform.offsetX * width,
+                (topFraction + 1f - bottomFraction) * height / 2f + routeTransform.offsetY * height
+            )
+            val groupWidth = width * 0.84f * routeTransform.scale
+            val groupHeight = height * (1f - topFraction - bottomFraction) * routeTransform.scale
+            val groupTopLeft = Offset(groupCenter.x - groupWidth / 2f, groupCenter.y - groupHeight / 2f)
+            drawRect(
+                color = Color(0xFF00AA13),
+                topLeft = groupTopLeft,
+                size = Size(groupWidth, groupHeight),
+                style = Stroke(width = 1.5f * width / 360f)
+            )
+            val handleSize = 24.dp.toPx()
+            val handleTopLeft = Offset(groupTopLeft.x + groupWidth - handleSize, groupTopLeft.y + groupHeight - handleSize)
+            drawRoundRect(
+                color = Color(0xFF00AA13),
+                topLeft = handleTopLeft,
+                size = Size(handleSize, handleSize),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx())
+            )
+            drawLine(
+                color = Color.White,
+                start = Offset(handleTopLeft.x + handleSize * 0.3f, handleTopLeft.y + handleSize * 0.7f),
+                end = Offset(handleTopLeft.x + handleSize * 0.7f, handleTopLeft.y + handleSize * 0.3f),
+                strokeWidth = 1.8.dp.toPx()
+            )
         }
     }
     if (showRouteLine && gpsPoints.size < 2) {
         Surface(
-            modifier = Modifier.align(Alignment.Center),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .graphicsLayer {
+                    val isStory = canvasHeight / canvasWidth >= 1.4f
+                    val topFraction = if (isStory) 0.14f else 0.15f
+                    val bottomFraction = if (isStory) 0.22f else 0.24f
+                    translationX = routeTransform.offsetX * canvasWidth
+                    translationY = (routeTransform.offsetY + (topFraction - bottomFraction) / 2f) * canvasHeight
+                    scaleX = routeTransform.scale
+                    scaleY = routeTransform.scale
+                },
             color = Color.Black.copy(alpha = 0.72f),
             shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
         ) {

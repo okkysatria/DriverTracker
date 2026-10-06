@@ -13,6 +13,8 @@ Driver Tracker is an Android app for recording driver orders, tracking trips, an
 - Create route posters as PNG images, including transparent backgrounds, and export routes as GPX.
 - Configure tracking, notifications, map overlays, and app appearance in Settings.
 
+Radar model input and calendar package requirements are documented in [RADAR_MODEL_FORMAT.md](RADAR_MODEL_FORMAT.md).
+
 ## Technology
 
 - Kotlin and Jetpack Compose with Material 3
@@ -20,14 +22,14 @@ Driver Tracker is an Android app for recording driver orders, tracking trips, an
 - Room for saved orders and DataStore for preferences
 - Android foreground location service with Google Play services location APIs
 - osmdroid and OpenStreetMap tiles for maps
-- H3 spatial indexing and optional ONNX Runtime model support for hotspot scoring
+- ONNX Runtime for imported Radar demand forecasting models
 
 ## Project Structure
 
 ```text
 app/src/main/java/com/example/drivertracker/
 ├── data/          Room database, entities, preferences, and tracking state
-├── ml/            Hotspot scoring and ONNX model support
+├── ml/            Radar ONNX inference and model package support
 ├── service/       Foreground GPS tracking and notification actions
 └── ui/
     ├── components/ Reusable dialogs, map views, and map pins

@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -25,16 +26,18 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import android.location.Location
 import com.example.drivertracker.data.repository.TrackingState
 import com.example.drivertracker.ui.MainViewModel
 import com.example.drivertracker.ui.components.SaveOrderDialog
+import com.example.drivertracker.ui.components.DriverTrackerScaffold
+import com.example.drivertracker.ui.components.pageContentPadding
 import com.example.drivertracker.ui.utils.toRupiahString
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
@@ -50,12 +53,10 @@ fun RekamOrderScreen(
 
     val trackingState by viewModel.trackingState.collectAsStateWithLifecycle()
     val currentLocation by viewModel.currentLocation.collectAsStateWithLifecycle()
-    val currentAddress by viewModel.currentAddress.collectAsStateWithLifecycle()
     val durationSeconds by viewModel.durationSeconds.collectAsStateWithLifecycle()
     val jarakKePickup by viewModel.jarakKePickup.collectAsStateWithLifecycle()
     val jarakKeTujuan by viewModel.jarakKeTujuan.collectAsStateWithLifecycle()
     val totalJarak by viewModel.totalJarak.collectAsStateWithLifecycle()
-    val gpsPoints by viewModel.gpsPoints.collectAsStateWithLifecycle()
     val isDarkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
 
     val konsumsiBbm by viewModel.konsumsiBbm.collectAsStateWithLifecycle()
@@ -65,8 +66,8 @@ fun RekamOrderScreen(
     val todayNetIncome by viewModel.todayNetIncome.collectAsStateWithLifecycle()
     val todayOrderCount by viewModel.todayOrderCount.collectAsStateWithLifecycle()
     val todayTotalDistance by viewModel.todayTotalDistance.collectAsStateWithLifecycle()
-    val todayPickupDistance by viewModel.todayPickupDistance.collectAsStateWithLifecycle()
-    val todayDeliveryDistance by viewModel.todayDeliveryDistance.collectAsStateWithLifecycle()
+    val todayAverageSpeed by viewModel.todayAverageSpeed.collectAsStateWithLifecycle()
+    val todayTotalDuration by viewModel.todayTotalDuration.collectAsStateWithLifecycle()
 
     val locationPermissionState = rememberMultiplePermissionsState(
         listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -120,8 +121,55 @@ fun RekamOrderScreen(
         label = "pulsingAlpha"
     )
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
+    DriverTrackerScaffold(
+        title = "Perekam pesanan",
+        modifier = modifier,
+        actions = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = if (isDarkMode) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                    contentDescription = if (isDarkMode) "Mode gelap" else "Mode terang",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .width(52.dp)
+                        .height(36.dp)
+                        .toggleable(
+                            value = isDarkMode,
+                            role = Role.Switch,
+                            onValueChange = viewModel::toggleDarkMode
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(44.dp)
+                            .height(26.dp)
+                            .clip(CircleShape)
+                            .background(if (isDarkMode) Color(0xFF00AA13) else MaterialTheme.colorScheme.surfaceVariant)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .width(44.dp)
+                            .height(26.dp)
+                            .padding(horizontal = 3.dp),
+                        contentAlignment = if (isDarkMode) Alignment.CenterEnd else Alignment.CenterStart
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clip(CircleShape)
+                                .background(if (isDarkMode) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                        )
+                    }
+                }
+            }
+        },
         bottomBar = {
 
             BottomBarControl(
@@ -142,24 +190,16 @@ fun RekamOrderScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp)
+                .pageContentPadding(innerPadding)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Spacer(modifier = Modifier.height(4.dp))
-
-            HeaderBar(
-                isDarkMode = isDarkMode,
-                onToggleDarkMode = { viewModel.toggleDarkMode(it) }
-            )
-
             TodaySummaryCard(
                 netIncome = todayNetIncome,
                 orderCount = todayOrderCount,
                 totalKm = todayTotalDistance,
-                pickupKm = todayPickupDistance,
-                deliveryKm = todayDeliveryDistance
+                averageSpeedKmh = todayAverageSpeed,
+                totalDurationSeconds = todayTotalDuration
             )
 
             val isGpsHardwareEnabled = remember(currentLocation) {
@@ -167,6 +207,15 @@ fun RekamOrderScreen(
                 locMgr?.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) == true ||
                 locMgr?.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) == true
             }
+
+            LiveTrackingPanel(
+                trackingState = trackingState,
+                durationSeconds = durationSeconds,
+                totalJarak = totalJarak,
+                jarakKePickup = jarakKePickup,
+                jarakKeTujuan = jarakKeTujuan,
+                pulsingAlpha = pulsingAlpha
+            )
 
             if (!isGpsHardwareEnabled) {
                 Surface(
@@ -209,25 +258,6 @@ fun RekamOrderScreen(
                 }
             }
 
-            GpsTelemetryCard(
-                location = currentLocation,
-                addressText = currentAddress,
-                gpsPointsCount = gpsPoints.size,
-                trackingState = trackingState,
-                pulsingAlpha = pulsingAlpha
-            )
-
-            if (trackingState != TrackingState.IDLE) {
-                LiveTrackingPanel(
-                    trackingState = trackingState,
-                    durationSeconds = durationSeconds,
-                    totalJarak = totalJarak,
-                    jarakKePickup = jarakKePickup,
-                    jarakKeTujuan = jarakKeTujuan,
-                    pulsingAlpha = pulsingAlpha
-                )
-            }
-
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
@@ -267,6 +297,13 @@ fun RekamOrderScreen(
     if (showCancelDialog) {
         AlertDialog(
             onDismissRequest = { showCancelDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Rounded.WarningAmber,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
             title = { Text("Batalkan pesanan?", fontWeight = FontWeight.Bold) },
             text = { Text("Pencatatan perjalanan ini akan dihentikan dan datanya tidak disimpan.") },
             confirmButton = {
@@ -275,82 +312,29 @@ fun RekamOrderScreen(
                         viewModel.cancelOrder(context)
                         showCancelDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEE2737))
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
                     Text("Batalkan")
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showCancelDialog = false }) {
+                FilledTonalButton(
+                    onClick = { showCancelDialog = false },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
                     Text("Kembali")
                 }
-            }
+            },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    }
-}
-
-@Composable
-private fun HeaderBar(
-    isDarkMode: Boolean,
-    onToggleDarkMode: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(13.dp),
-                color = Color(0xFF00AA13).copy(alpha = 0.12f)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Navigation,
-                    contentDescription = null,
-                    tint = Color(0xFF00AA13),
-                    modifier = Modifier.padding(10.dp).size(22.dp)
-                )
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(
-                    text = "Perekam pesanan",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    text = "Catat perjalanan dan penghasilan",
-                    fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Icon(
-                imageVector = if (isDarkMode) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
-                contentDescription = "Theme",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
-            Switch(
-                checked = isDarkMode,
-                onCheckedChange = onToggleDarkMode,
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color(0xFF00AA13),
-                    checkedTrackColor = Color(0xFF00AA13).copy(alpha = 0.3f)
-                )
-            )
-        }
     }
 }
 
@@ -359,8 +343,8 @@ private fun TodaySummaryCard(
     netIncome: Double,
     orderCount: Int,
     totalKm: Double,
-    pickupKm: Double,
-    deliveryKm: Double
+    averageSpeedKmh: Double,
+    totalDurationSeconds: Long
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -459,13 +443,13 @@ private fun TodaySummaryCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "Jemput:",
+                        text = "Rata-rata:",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = String.format(Locale.US, "%.1f km", pickupKm),
-                        fontSize = 12.sp,
+                        text = String.format(Locale.US, "%.1f km/j", averageSpeedKmh),
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF00AA13)
                     )
@@ -478,15 +462,15 @@ private fun TodaySummaryCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "Antar:",
+                        text = "Durasi:",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = String.format(Locale.US, "%.1f km", deliveryKm),
-                        fontSize = 12.sp,
+                        text = formatSummaryDuration(totalDurationSeconds),
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFEE2737)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -494,230 +478,11 @@ private fun TodaySummaryCard(
     }
 }
 
-@Composable
-private fun GpsTelemetryCard(
-    location: Location?,
-    addressText: String,
-    gpsPointsCount: Int,
-    trackingState: TrackingState,
-    pulsingAlpha: Float
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .alpha(if (location != null) pulsingAlpha else 0.4f)
-                            .background(
-                                color = if (location != null) Color(0xFF00AA13) else Color(0xFFFDB813),
-                                shape = CircleShape
-                            )
-                    )
-                    Text(
-                        text = if (location != null) "GPS AKTIF" else "MENCARI GPS...",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp,
-                        color = if (location != null) Color(0xFF00AA13) else Color(0xFFFDB813)
-                    )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.MyLocation,
-                            contentDescription = null,
-                            modifier = Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        val accText = if (location != null && location.hasAccuracy()) {
-                            "±${location.accuracy.toInt()} m"
-                        } else {
-                            "Mencari..."
-                        }
-                        Text(
-                            text = accText,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = Color(0xFF00AA13).copy(alpha = 0.12f),
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.LocationOn,
-                            contentDescription = "Lokasi",
-                            tint = Color(0xFF00AA13),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Lokasi Terkini",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = addressText.ifBlank { "Menunggu koordinat GPS..." },
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 18.sp
-                    )
-                }
-            }
-
-            HorizontalDivider(
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val narrowLayout = maxWidth < 300.dp
-            Column(verticalArrangement = Arrangement.spacedBy(if (narrowLayout) 10.dp else 0.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-
-                val speedKmh = if (location != null && location.hasSpeed()) {
-                    (location.speed * 3.6f)
-                } else 0f
-                TelemetryMetricItem(
-                    label = "Kecepatan",
-                    value = String.format(Locale.US, "%.0f km/j", speedKmh),
-                    icon = Icons.Rounded.Speed,
-                    tint = Color(0xFF00AA13),
-                    modifier = Modifier.weight(if (narrowLayout) 1f else 1f)
-                )
-
-                val coordText = if (location != null) {
-                    String.format(Locale.US, "%.4f, %.4f", location.latitude, location.longitude)
-                } else {
-                    "- , -"
-                }
-                TelemetryMetricItem(
-                    label = "Koordinat",
-                    value = coordText,
-                    icon = Icons.Rounded.Navigation,
-                    tint = Color(0xFF1E88E5),
-                    modifier = Modifier.weight(if (narrowLayout) 1.4f else 1.3f)
-                )
-
-                val titikText = if (trackingState != TrackingState.IDLE) {
-                    "$gpsPointsCount titik"
-                } else {
-                    "Siaga"
-                }
-                if (!narrowLayout) TelemetryMetricItem(
-                    label = "Status Rekam",
-                    value = titikText,
-                    icon = Icons.Rounded.Timeline,
-                    tint = if (trackingState != TrackingState.IDLE) Color(0xFFFDB813) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            if (narrowLayout) {
-                val titikText = if (trackingState != TrackingState.IDLE) "$gpsPointsCount titik" else "Siaga"
-                TelemetryMetricItem(
-                    label = "Status Rekam",
-                    value = titikText,
-                    icon = Icons.Rounded.Timeline,
-                    tint = if (trackingState != TrackingState.IDLE) Color(0xFFFDB813) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TelemetryMetricItem(
-    label: String,
-    value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.Start
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(13.dp)
-            )
-            Text(
-                text = label,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = value,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
+private fun formatSummaryDuration(totalSeconds: Long): String {
+    val totalMinutes = totalSeconds.coerceAtLeast(0L) / 60L
+    val hours = totalMinutes / 60L
+    val minutes = totalMinutes % 60L
+    return if (hours > 0L) "${hours}j ${minutes}m" else "${minutes}m"
 }
 
 @Composable
@@ -729,8 +494,16 @@ private fun LiveTrackingPanel(
     jarakKeTujuan: Double,
     pulsingAlpha: Float
 ) {
-    val statusColor = if (trackingState == TrackingState.STARTED) Color(0xFFFDB813) else Color(0xFFEE2737)
-    val statusText = if (trackingState == TrackingState.STARTED) "Menuju lokasi jemput" else "Mengantar pesanan"
+    val statusColor = when (trackingState) {
+        TrackingState.IDLE -> Color(0xFF00AA13)
+        TrackingState.STARTED -> Color(0xFFFDB813)
+        else -> Color(0xFFEE2737)
+    }
+    val statusText = when (trackingState) {
+        TrackingState.IDLE -> "Siap mencatat"
+        TrackingState.STARTED -> "Menuju lokasi jemput"
+        else -> "Mengantar pesanan"
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -751,7 +524,7 @@ private fun LiveTrackingPanel(
                 Box(
                     modifier = Modifier
                         .size(10.dp)
-                        .alpha(pulsingAlpha)
+                        .alpha(if (trackingState == TrackingState.IDLE) 1f else pulsingAlpha)
                         .background(statusColor, CircleShape)
                 )
                 Text(
@@ -804,22 +577,30 @@ private fun LiveTrackingPanel(
                 }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            if (trackingState == TrackingState.IDLE) {
                 Text(
-                    text = String.format(Locale.US, "Jemput: %.1f km", jarakKePickup),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF00AA13)
+                    text = "Tekan Mulai pencatatan untuk merekam perjalanan.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    text = String.format(Locale.US, "Antar: %.1f km", jarakKeTujuan),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFEE2737)
-                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = String.format(Locale.US, "Jemput: %.1f km", jarakKePickup),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF00AA13)
+                    )
+                    Text(
+                        text = String.format(Locale.US, "Antar: %.1f km", jarakKeTujuan),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFEE2737)
+                    )
+                }
             }
         }
     }

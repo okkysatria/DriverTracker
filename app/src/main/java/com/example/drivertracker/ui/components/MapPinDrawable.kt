@@ -85,18 +85,12 @@ fun createMapPinDrawable(
             glyphPaint.style = Paint.Style.FILL
             canvas.drawPath(arrow, glyphPaint)
         }
-        MapPinGlyph.HOTSPOT -> {
-            val star = Path()
-            for (i in 0 until 10) {
-                val angle = Math.PI * i / 5.0 - Math.PI / 2
-                val radius = if (i % 2 == 0) 8.0 else 3.7
-                val x = (22 + kotlin.math.cos(angle) * radius).toFloat()
-                val y = (17 + kotlin.math.sin(angle) * radius).toFloat()
-                if (i == 0) star.moveTo(x, y) else star.lineTo(x, y)
-            }
-            star.close()
+        MapPinGlyph.PREDICTION -> {
             glyphPaint.style = Paint.Style.FILL
-            canvas.drawPath(star, glyphPaint)
+            canvas.drawCircle(22f, 18f, 6f, glyphPaint)
+            glyphPaint.style = Paint.Style.STROKE
+            glyphPaint.strokeWidth = 2f
+            canvas.drawCircle(22f, 18f, 10f, glyphPaint)
         }
     }
     canvas.restore()
@@ -105,7 +99,7 @@ fun createMapPinDrawable(
     }
 }
 
-enum class MapPinGlyph { PASSENGER, FOOD, PACKAGE, DRIVER, HOTSPOT }
+enum class MapPinGlyph { PASSENGER, FOOD, PACKAGE, DRIVER, PREDICTION }
 
 fun orderMapPinGlyph(type: String): MapPinGlyph = when (type.trim().lowercase()) {
     "makanan", "food" -> MapPinGlyph.FOOD

@@ -4,12 +4,10 @@ import android.content.Context
 import android.Manifest
 import android.location.Location
 import android.content.pm.PackageManager
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -24,7 +22,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -33,24 +30,22 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.drivertracker.data.local.entity.OrderRecord
-import com.example.drivertracker.ml.HotspotInfo
-import com.example.drivertracker.ml.SmartHeatmapPredictor
+import com.example.drivertracker.ml.RadarOnnxManager
+import com.example.drivertracker.ml.RadarPrediction
 import com.example.drivertracker.ui.MainViewModel
 import com.example.drivertracker.ui.components.DRIVER_TRACKER_OSM_TILE_SOURCE
 import com.example.drivertracker.ui.components.MapPinGlyph
 import com.example.drivertracker.ui.components.createMapPinDrawable
-import com.example.drivertracker.ui.components.orderMapPinColor
-import com.example.drivertracker.ui.components.orderMapPinGlyph
 import org.osmdroid.config.Configuration
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.LocalDateTime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 
@@ -71,47 +66,77 @@ fun SmartHeatmapScreen(
         context,
         Manifest.permission.ACCESS_COARSE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED
+
     LaunchedEffect(hasLocationPermission) {
         if (hasLocationPermission) viewModel.startLocationUpdates()
         else locationPermissions.launchMultiplePermissionRequest()
     }
+
     val isDarkMode by viewModel.isDarkMode.collectAsStateWithLifecycle()
     val currentLocation by viewModel.currentLocation.collectAsStateWithLifecycle()
-    val allOrders by viewModel.allOrders.collectAsStateWithLifecycle()
-    val onnxModelName by viewModel.customOnnxModelName.collectAsStateWithLifecycle()
-
-    val predictor = remember(context) { SmartHeatmapPredictor(context) }
-
-    val showHistory by viewModel.showRadarHistory.collectAsStateWithLifecycle()
-    val showAiRadar by viewModel.showRadarAi.collectAsStateWithLifecycle()
-
+    val modelReady by produceState(initialValue = false) {
+        value = withContext(Dispatchers.IO) { RadarOnnxManager.hasModel(context) }
+    }
     var selectedCategory by remember { mutableStateOf("Semua") }
-    var selectedSort by remember { mutableStateOf("Terdekat") }
-    var targetHotspotPoint by remember { mutableStateOf<GeoPoint?>(null) }
     var shouldRecenter by remember { mutableStateOf(false) }
+    var forecastHourRefresh by remember { mutableIntStateOf(0) }
 
-    val curLat = currentLocation?.latitude ?: 0.0
-    val curLng = currentLocation?.longitude ?: 0.0
-    val latestRecordedLocation = remember(allOrders) {
-        allOrders.firstNotNullOfOrNull { order ->
-            when {
-                order.latitudePickup != 0.0 && order.longitudePickup != 0.0 ->
-                    GeoPoint(order.latitudePickup, order.longitudePickup)
-                order.latitudeAwal != 0.0 && order.longitudeAwal != 0.0 ->
-                    GeoPoint(order.latitudeAwal, order.longitudeAwal)
-                else -> null
-            }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val now = java.util.Calendar.getInstance()
+            val millisToNextHour = (
+                3_600_000L - now.get(java.util.Calendar.MINUTE) * 60_000L -
+                    now.get(java.util.Calendar.SECOND) * 1_000L - now.get(java.util.Calendar.MILLISECOND)
+                ).coerceAtLeast(1_000L)
+            delay(millisToNextHour)
+            forecastHourRefresh++
         }
     }
 
-    val hotspots = remember(curLat, curLng, allOrders, selectedCategory, selectedSort) {
-        predictor.predictHotspots(
-            currentLat = curLat,
-            currentLng = curLng,
-            orders = allOrders,
-            categoryFilter = selectedCategory,
-            sortBy = selectedSort
-        )
+    val predictions by produceState(
+        initialValue = emptyList<RadarPrediction>(),
+        currentLocation?.latitude?.let { (it * 1000).toInt() },
+        currentLocation?.longitude?.let { (it * 1000).toInt() },
+        selectedCategory,
+        modelReady,
+        forecastHourRefresh
+    ) {
+        value = withContext(Dispatchers.IO) {
+            val driver = currentLocation ?: return@withContext emptyList()
+            if (!modelReady) return@withContext emptyList()
+            val categories = if (selectedCategory == "Semua") {
+                listOf("Penumpang", "Makanan", "Paket")
+            } else listOf(selectedCategory)
+            val startTime = LocalDateTime.now()
+            val currentPredictions = RadarOnnxManager.predictAround(
+                context = context,
+                latitude = driver.latitude,
+                longitude = driver.longitude,
+                forecastTime = startTime,
+                categories = categories
+            )
+            val nextHourPredictions = RadarOnnxManager.predictAround(
+                context = context,
+                latitude = driver.latitude,
+                longitude = driver.longitude,
+                forecastTime = startTime.plusHours(1),
+                categories = categories
+            )
+
+            (currentPredictions + nextHourPredictions)
+                .groupBy { Triple(it.latitude, it.longitude, it.category) }
+                .map { (key, values) ->
+                    RadarPrediction(
+                        latitude = key.first,
+                        longitude = key.second,
+                        category = key.third,
+                        predictedOrders = values.map { it.predictedOrders }.average().toFloat(),
+                        forecastTime = startTime
+                    )
+                }
+                .sortedByDescending { it.predictedOrders }
+                .take(30)
+        }
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -125,381 +150,117 @@ fun SmartHeatmapScreen(
         label = "alpha"
     )
 
-    BoxWithConstraints(
-        modifier = modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
-    ) {
-        val mapHeight = (maxHeight * 0.40f).coerceIn(190.dp, 320.dp)
+    Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        RadarMapView(
+            currentLocation = currentLocation,
+            predictions = predictions,
+            isDarkMode = isDarkMode,
+            recenterTrigger = shouldRecenter,
+            onRecenterHandled = { shouldRecenter = false }
+        )
 
-        Column(modifier = Modifier.fillMaxSize()) {
-
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = "Radar pintar",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-
-        }
-
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(mapHeight)
-                .clip(RoundedCornerShape(20.dp)),
-            shape = RoundedCornerShape(20.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-
-                RadarMapView(
-                    currentLocation = currentLocation,
-                    latestRecordedLocation = latestRecordedLocation,
-                    hotspots = if (showAiRadar) hotspots else emptyList(),
-                    historyOrders = if (showHistory) allOrders else emptyList(),
-                    targetPoint = targetHotspotPoint,
-                    isDarkMode = isDarkMode,
-                    recenterTrigger = shouldRecenter,
-                    onRecenterHandled = { shouldRecenter = false }
-                )
-
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                    shadowElevation = 4.dp
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                shadowElevation = 3.dp
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    Text(
+                        text = "Radar pintar",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(10.dp)
+                                .size(9.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF00AA13).copy(alpha = pulsingAlpha))
+                                .background((if (currentLocation != null) Color(0xFF00AA13) else Color.Gray).copy(alpha = pulsingAlpha))
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                        text = if (currentLocation != null) "GPS Aktif" else "Menunggu GPS",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                        color = if (currentLocation != null) Color(0xFF00AA13) else MaterialTheme.colorScheme.onSurfaceVariant
+                            text = if (currentLocation != null) "GPS aktif" else "Menunggu GPS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (currentLocation != null) Color(0xFF00AA13) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(12.dp)
-                        .size(44.dp)
-                        .clickable { shouldRecenter = true },
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surface,
-                    shadowElevation = 6.dp
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.MyLocation,
-                            contentDescription = "Pusatkan Peta",
-                            tint = Color(0xFF00AA13),
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-
-                if (onnxModelName.isNotBlank()) {
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(12.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFF1E88E5).copy(alpha = 0.88f),
-                        shadowElevation = 4.dp
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Memory,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Text(
-                                text = "Model aktif",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Column(modifier = Modifier.fillMaxWidth()) {
-
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(horizontal = 2.dp)
-            ) {
-                val categories = listOf("Semua", "Penumpang", "Makanan", "Paket")
-                items(categories) { cat ->
-                    val categoryColor = when (cat) {
-                        "Penumpang" -> Color(0xFF16A34A)
-                        "Makanan" -> Color(0xFFDC2626)
-                        "Paket" -> Color(0xFF2563EB)
-                        else -> MaterialTheme.colorScheme.primary
-                    }
-                    FilterChip(
-                        selected = selectedCategory == cat,
-                        onClick = { selectedCategory = cat },
-                        label = { Text(cat, fontSize = 12.sp) },
-                        leadingIcon = if (selectedCategory == cat) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Rounded.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        } else null,
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = categoryColor,
-                            selectedLabelColor = Color.White,
-                            selectedLeadingIconColor = Color.White,
-                            selectedTrailingIconColor = Color.White,
-                            containerColor = categoryColor.copy(alpha = 0.08f),
-                            labelColor = categoryColor,
-                            iconColor = categoryColor
-                        ),
-                        border = null
-                    )
-                }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            LazyRow(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                contentPadding = PaddingValues(horizontal = 2.dp)
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                shadowElevation = 2.dp
             ) {
-                item {
-                    Text(
-                        text = "Urutkan berdasarkan:",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                items(listOf("Terdekat", "Paling Berpotensi")) { sortOpt ->
-                        AssistChip(
-                            onClick = { selectedSort = sortOpt },
-                            label = { Text(sortOpt, fontSize = 11.sp) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = if (sortOpt == "Terdekat") Icons.Rounded.NearMe else Icons.Rounded.Bolt,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp),
-                                    tint = if (selectedSort == sortOpt) Color(0xFF00AA13) else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 5.dp)
+                ) {
+                    items(listOf("Semua", "Penumpang", "Makanan", "Paket")) { category ->
+                        val categoryColor = when (category) {
+                            "Makanan" -> Color(0xFFDC2626)
+                            "Paket" -> Color(0xFF2563EB)
+                            else -> Color(0xFF16A34A)
+                        }
+                        FilterChip(
+                            selected = selectedCategory == category,
+                            onClick = { selectedCategory = category },
+                            label = { Text(category, fontSize = 11.sp, maxLines = 1) },
+                            leadingIcon = if (selectedCategory == category) {
+                                { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(13.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = categoryColor,
+                                selectedLabelColor = Color.White,
+                                selectedLeadingIconColor = Color.White,
+                                containerColor = categoryColor.copy(alpha = 0.08f),
+                                labelColor = categoryColor,
+                                iconColor = categoryColor
+                            ),
                             border = null
                         )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "8 area paling potensial",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(vertical = 4.dp)
-        )
-        Text(
-            text = "Estimasi dihitung dari riwayat pesanan yang memiliki lokasi.",
-            fontSize = 11.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 16.dp)
-        ) {
-            if (hotspots.isEmpty()) {
-                item {
-                    Text(
-                        text = if (currentLocation == null) {
-                            "Menunggu lokasi GPS dan riwayat pesanan untuk menghitung area potensial."
-                        } else {
-                            "Belum ada riwayat pesanan dengan lokasi yang tercatat."
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 20.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            } else {
-                items(hotspots, key = { it.name + it.rank }) { hotspot ->
-                    HotspotCardItem(
-                        hotspot = hotspot,
-                        onLihatPetaClick = {
-                            targetHotspotPoint = GeoPoint(hotspot.latitude, hotspot.longitude)
-                        }
-                    )
-                }
-            }
-        }
-        }
-    }
-}
-
-@Composable
-fun HotspotCardItem(
-    hotspot: HotspotInfo,
-    onLihatPetaClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (hotspot.rank <= 3) Color(0xFF00AA13)
-                            else MaterialTheme.colorScheme.surfaceTint.copy(alpha = 0.2f)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "#${hotspot.rank}",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (hotspot.rank <= 3) Color.White else MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column {
-                    Text(
-                        text = hotspot.name,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-
-                    Text(
-                        text = "${hotspot.distanceKm} km • ${hotspot.category}",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF00AA13).copy(alpha = 0.12f)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Bolt,
-                            contentDescription = null,
-                            tint = Color(0xFF00AA13),
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = "Potensi ${hotspot.gacorScore}",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF00AA13)
-                        )
                     }
                 }
+            }
 
-                Button(
-                    onClick = onLihatPetaClick,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                    modifier = Modifier.heightIn(min = 44.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF00AA13)
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Map,
-                        contentDescription = null,
-                        modifier = Modifier.size(13.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Lihat Peta",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+        }
+
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+                .size(48.dp)
+                .clickable { shouldRecenter = true },
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 5.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Rounded.MyLocation,
+                    contentDescription = "Pusatkan peta",
+                    tint = Color(0xFF00AA13),
+                    modifier = Modifier.size(22.dp)
+                )
             }
         }
     }
@@ -508,11 +269,8 @@ fun HotspotCardItem(
 @Composable
 fun RadarMapView(
     currentLocation: Location?,
-    hotspots: List<HotspotInfo>,
-    historyOrders: List<OrderRecord>,
-    targetPoint: GeoPoint?,
+    predictions: List<RadarPrediction> = emptyList(),
     isDarkMode: Boolean,
-    latestRecordedLocation: GeoPoint? = null,
     recenterTrigger: Boolean = false,
     onRecenterHandled: () -> Unit = {}
 ) {
@@ -531,12 +289,10 @@ fun RadarMapView(
     }
     var hasCenteredOnDriver by remember(mapView) { mutableStateOf(false) }
 
-    LaunchedEffect(currentLocation, latestRecordedLocation) {
+    LaunchedEffect(currentLocation) {
         if (!hasCenteredOnDriver) {
-            val recordedLocation = currentLocation?.let { GeoPoint(it.latitude, it.longitude) }
-                ?: latestRecordedLocation
-            if (recordedLocation != null) {
-                mapView.controller.animateTo(recordedLocation)
+            currentLocation?.let { location ->
+                mapView.controller.animateTo(GeoPoint(location.latitude, location.longitude))
                 hasCenteredOnDriver = true
             }
         }
@@ -578,100 +334,69 @@ fun RadarMapView(
         }
     }
 
-    LaunchedEffect(targetPoint) {
-        targetPoint?.let { pt ->
-            mapView.controller.animateTo(pt)
-            mapView.controller.setZoom(16.5)
+    val predictionMarkers = remember(mapView) { mutableListOf<Marker>() }
+    val driverMarker = remember(mapView) {
+        Marker(mapView).apply {
+            icon = createMapPinDrawable(context, android.graphics.Color.rgb(8, 145, 178), MapPinGlyph.DRIVER)
+            title = "Posisi Anda"
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+        }
+    }
+    val driverAccuracyCircle = remember(mapView) {
+        Polygon(mapView).apply {
+            fillPaint.color = android.graphics.Color.parseColor("#3300AA13")
+            outlinePaint.color = android.graphics.Color.parseColor("#8000AA13")
+            outlinePaint.strokeWidth = 2f
         }
     }
 
-    LaunchedEffect(currentLocation, hotspots, historyOrders) {
-        mapView.overlays.clear()
-
-        hotspots.forEach { hotspot ->
-            if (hotspot.latitude.isFinite() && hotspot.longitude.isFinite()) {
-
-                val centerMarker = Marker(mapView).apply {
-                    position = GeoPoint(hotspot.latitude, hotspot.longitude)
-                    icon = createMapPinDrawable(context, android.graphics.Color.rgb(124, 58, 237), MapPinGlyph.HOTSPOT)
-                    title = hotspot.name
-                    snippet = "Potensi ${hotspot.gacorScore} • ${hotspot.orderCountInZone} pesanan • ${hotspot.category}"
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                }
-                mapView.overlays.add(centerMarker)
+    LaunchedEffect(predictions) {
+        mapView.overlays.removeAll(predictionMarkers)
+        predictionMarkers.clear()
+        predictions.forEach { prediction ->
+            val markerColor = when (prediction.category) {
+                "Makanan" -> android.graphics.Color.rgb(220, 38, 38)
+                "Paket" -> android.graphics.Color.rgb(37, 99, 235)
+                else -> android.graphics.Color.rgb(22, 163, 74)
             }
-        }
-
-        val orderLocations = historyOrders.mapNotNull { order ->
-            val coordinates = listOf(
-                order.latitudePickup to order.longitudePickup,
-                order.latitudeAwal to order.longitudeAwal,
-                order.latitudeAkhir to order.longitudeAkhir
-            ).firstOrNull { (lat, lon) ->
-                lat.isFinite() && lon.isFinite() && lat in -90.0..90.0 &&
-                    lon in -180.0..180.0 && (lat != 0.0 || lon != 0.0)
-            } ?: return@mapNotNull null
-            order to coordinates
-        }
-
-        val groupedOrderLocations = orderLocations.groupBy { (_, coordinates) ->
-            (coordinates.first * 10_000).toInt() to (coordinates.second * 10_000).toInt()
-        }
-        groupedOrderLocations.values.forEach { ordersAtLocation ->
-            val (primaryOrder, coordinates) = ordersAtLocation.first()
-            val pin = Marker(mapView).apply {
-                position = GeoPoint(coordinates.first, coordinates.second)
-                icon = createMapPinDrawable(
-                    context,
-                    orderMapPinColor(primaryOrder.jenisOrder),
-                    orderMapPinGlyph(primaryOrder.jenisOrder)
-                )
-                title = if (ordersAtLocation.size == 1) "Pesanan ${primaryOrder.jenisOrder}"
-                else "${ordersAtLocation.size} pesanan di lokasi ini"
-                snippet = ordersAtLocation.joinToString("\n") { (order, _) ->
-                    val orderTime = listOf(order.jamSelesai, order.jamPickup, order.jamMulai)
-                        .firstOrNull { it > 0L }
-                        ?.let { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it)) }
-                        ?: "Jam tidak tersedia"
-                    val address = order.alamatPickup.ifBlank {
-                        order.alamatAwal.ifBlank { order.alamatAkhir }
-                    }
-                    buildString {
-                        append("${order.jenisOrder} • $orderTime")
-                        if (address.isNotBlank()) append(" • $address")
-                        if (order.tanggal.isNotBlank()) append(" • ${order.tanggal}")
-                    }
-                }
+            val marker = Marker(mapView).apply {
+                position = GeoPoint(prediction.latitude, prediction.longitude)
+                icon = createMapPinDrawable(context, markerColor, MapPinGlyph.PREDICTION)
+                title = "${prediction.category} • Prediksi 1 jam"
+                snippet = "Rata-rata: ${String.format(java.util.Locale.getDefault(), "%.1f", prediction.predictedOrders)} order/jam"
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             }
-            mapView.overlays.add(pin)
+            predictionMarkers += marker
+            mapView.overlays.add(marker)
         }
+        mapView.invalidate()
+    }
 
+    LaunchedEffect(currentLocation) {
         currentLocation?.let { loc ->
             val driverGeo = GeoPoint(loc.latitude, loc.longitude)
 
             if (loc.hasAccuracy() && loc.accuracy > 0) {
-                val circle = Polygon(mapView).apply {
-                    points = Polygon.pointsAsCircle(driverGeo, loc.accuracy.toDouble())
-                    fillPaint.color = android.graphics.Color.parseColor("#3300AA13")
-                    outlinePaint.color = android.graphics.Color.parseColor("#8000AA13")
-                    outlinePaint.strokeWidth = 2f
+                driverAccuracyCircle.points = Polygon.pointsAsCircle(driverGeo, loc.accuracy.toDouble())
+                if (!mapView.overlays.contains(driverAccuracyCircle)) {
+                    mapView.overlays.add(driverAccuracyCircle)
                 }
-                mapView.overlays.add(circle)
+            } else {
+                mapView.overlays.remove(driverAccuracyCircle)
             }
 
-            val driverMarker = Marker(mapView).apply {
-                position = driverGeo
-                icon = createMapPinDrawable(context, android.graphics.Color.rgb(8, 145, 178), MapPinGlyph.DRIVER)
-                title = "Posisi Anda"
-                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            driverMarker.position = driverGeo
+            if (!mapView.overlays.contains(driverMarker)) {
+                mapView.overlays.add(driverMarker)
             }
-            mapView.overlays.add(driverMarker)
 
-            if (targetPoint == null && !hasCenteredOnDriver) {
+            if (!hasCenteredOnDriver) {
                 mapView.controller.animateTo(driverGeo)
                 hasCenteredOnDriver = true
             }
+        } ?: run {
+            mapView.overlays.remove(driverAccuracyCircle)
+            mapView.overlays.remove(driverMarker)
         }
 
         mapView.invalidate()
@@ -683,7 +408,7 @@ fun RadarMapView(
             modifier = Modifier.fillMaxSize()
         )
         Surface(
-            modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+            modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
             color = Color.White.copy(alpha = 0.88f),
             shape = RoundedCornerShape(6.dp)
         ) {

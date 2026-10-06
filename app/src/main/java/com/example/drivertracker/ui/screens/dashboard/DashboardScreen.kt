@@ -1,7 +1,13 @@
 package com.example.drivertracker.ui.screens.dashboard
 
 import android.content.Context
+import android.content.ContentValues
 import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -33,6 +39,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.drivertracker.data.local.entity.OrderRecord
 import androidx.core.content.FileProvider
 import com.example.drivertracker.ui.MainViewModel
+import com.example.drivertracker.ui.components.DriverTrackerScaffold
+import com.example.drivertracker.ui.components.pageContentPadding
 import com.example.drivertracker.ui.utils.toRupiahString
 import java.io.File
 import java.text.NumberFormat
@@ -365,9 +373,9 @@ fun DashboardScreen(
         }
     }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        contentWindowInsets = WindowInsets(0.dp, 0.dp, 0.dp, 0.dp),
+    DriverTrackerScaffold(
+        title = "Laporan keuangan",
+        modifier = modifier,
         bottomBar = {
 
             Surface(
@@ -375,12 +383,50 @@ fun DashboardScreen(
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 8.dp
             ) {
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    FilledTonalButton(
+                        onClick = {
+                            exportSlipGajiPdf(
+                                context = context,
+                                driverName = driverName,
+                                period = currentPeriodName,
+                                netProfit = totalNetProfit,
+                                grossIncome = totalGrossIncome,
+                                fuelExpense = totalFuelExpense,
+                                totalTrips = totalTrips,
+                                totalDistance = totalDistance,
+                                orders = filteredOrders,
+                                sharePdf = true
+                            )
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Share,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Bagikan PDF",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
+                    }
+
                     Button(
                         onClick = {
                             exportSlipGajiPdf(
@@ -392,62 +438,30 @@ fun DashboardScreen(
                                 fuelExpense = totalFuelExpense,
                                 totalTrips = totalTrips,
                                 totalDistance = totalDistance,
-                                orders = filteredOrders
+                                orders = filteredOrders,
+                                sharePdf = false
                             )
                         },
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .weight(1f)
                             .height(50.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF00AA13)
+                            containerColor = Color(0xFF00AA13),
+                            contentColor = Color.White
                         )
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Description,
+                            imageVector = Icons.Rounded.SaveAlt,
                             contentDescription = null,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Ekspor laporan PDF",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    FilledTonalButton(
-                        onClick = {
-                            val reportText = buildMonthlyReportText(
-                                period = currentPeriodName,
-                                netProfit = totalNetProfit,
-                                grossIncome = totalGrossIncome,
-                                fuelExpense = totalFuelExpense,
-                                totalTrips = totalTrips,
-                                totalDistance = totalDistance,
-                                orders = filteredOrders
-                            )
-                            exportReport(context, currentPeriodName, reportText)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(42.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Share,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Bagikan ringkasan",
+                            text = "Simpan PDF",
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
                         )
                     }
                 }
@@ -457,28 +471,10 @@ fun DashboardScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
                 .background(MaterialTheme.colorScheme.background)
-                .padding(horizontal = 16.dp),
+                .pageContentPadding(paddingValues),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
         ) {
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Laporan keuangan",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-
-                }
-            }
 
             item {
                 Column(
@@ -1472,50 +1468,6 @@ fun formatRupiah(amount: Double): String {
     return formatter.format(amount).replace(",00", "")
 }
 
-fun buildMonthlyReportText(
-    period: String,
-    netProfit: Double,
-    grossIncome: Double,
-    fuelExpense: Double,
-    totalTrips: Int,
-    totalDistance: Double,
-    orders: List<OrderRecord>
-): String {
-    val penumpangCount = orders.count { it.jenisOrder.equals("Penumpang", ignoreCase = true) }
-    val makananCount = orders.count { it.jenisOrder.equals("Makanan", ignoreCase = true) }
-    val paketCount = orders.count { it.jenisOrder.equals("Paket", ignoreCase = true) }
-
-    return """
-*REKAP LAPORAN KEUANGAN DRIVER TRACKER*
-Periode: $period
------------------------------------
-*Pendapatan bersih*: ${formatRupiah(netProfit)}
-Pendapatan kotor: ${formatRupiah(grossIncome)}
-Pengeluaran bensin: ${formatRupiah(fuelExpense)}
-Pesanan selesai: $totalTrips
-Jarak tempuh: ${String.format(Locale.US, "%.1f", totalDistance)} km
-
-*Rincian jenis layanan*:
-- Penumpang: $penumpangCount pesanan
-- Makanan: $makananCount pesanan
-- Paket: $paketCount pesanan
-
------------------------------------
-Dibuat otomatis oleh Driver Tracker
-""".trimIndent()
-}
-
-fun exportReport(context: Context, period: String, reportText: String) {
-    val sendIntent = Intent().apply {
-        action = Intent.ACTION_SEND
-        putExtra(Intent.EXTRA_TEXT, reportText)
-        putExtra(Intent.EXTRA_SUBJECT, "Laporan Rekapitulasi Driver Tracker - $period")
-        type = "text/plain"
-    }
-    val shareIntent = Intent.createChooser(sendIntent, "Bagikan Rekap Laporan Bulanan")
-    context.startActivity(shareIntent)
-}
-
 fun exportSlipGajiPdf(
     context: Context,
     driverName: String,
@@ -1525,7 +1477,8 @@ fun exportSlipGajiPdf(
     fuelExpense: Double,
     totalTrips: Int,
     totalDistance: Double,
-    orders: List<OrderRecord>
+    orders: List<OrderRecord>,
+    sharePdf: Boolean
 ) {
     try {
         val activeDriver = driverName.trim().ifBlank { "BELUM DIATUR" }
@@ -1543,9 +1496,8 @@ fun exportSlipGajiPdf(
 
         val idLocale = Locale.forLanguageTag("id-ID")
         val printDate = SimpleDateFormat("dd MMMM yyyy, HH:mm", idLocale).format(Date())
-        val dateCode = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
-        val uniqueCode = "${dateCode}-${String.format(Locale.US, "%04d", totalTrips)}"
-        val refNumber = "SLIP/DT/${SimpleDateFormat("yyyyMM", Locale.getDefault()).format(Date())}/${String.format(Locale.US, "%04d", totalTrips)}"
+        val uniqueCode = UUID.randomUUID().toString().replace("-", "").uppercase(Locale.US).take(12)
+        val refNumber = "SLIP/DT/$uniqueCode"
 
         val pPct = if (totalTrips > 0) String.format(idLocale, "%.1f%%", (penumpangCount.toDouble() / totalTrips) * 100) else "0,0%"
         val mPct = if (totalTrips > 0) String.format(idLocale, "%.1f%%", (makananCount.toDouble() / totalTrips) * 100) else "0,0%"
@@ -1637,7 +1589,7 @@ fun exportSlipGajiPdf(
 
         paint.typeface = android.graphics.Typeface.DEFAULT
         paint.color = android.graphics.Color.rgb(100, 116, 139)
-        canvas.drawText("ID Registrasi", 310f, 145f, paint)
+        canvas.drawText("ID Dokumen", 310f, 145f, paint)
         paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
         paint.color = android.graphics.Color.rgb(51, 65, 85)
         canvas.drawText(": DT-$uniqueCode", 415f, 145f, paint)
@@ -1868,7 +1820,7 @@ fun exportSlipGajiPdf(
         paint.typeface = android.graphics.Typeface.DEFAULT
         paint.color = android.graphics.Color.rgb(34, 84, 61)
         paint.textSize = 7f
-        canvas.drawText("ID Registrasi: DT-$uniqueCode", rightColX, signTop + 43f, paint)
+        canvas.drawText("ID Dokumen: DT-$uniqueCode", rightColX, signTop + 43f, paint)
 
         paint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
         paint.color = android.graphics.Color.rgb(15, 23, 42)
@@ -1885,7 +1837,7 @@ fun exportSlipGajiPdf(
         val safePeriod = period.replace(" ", "_").replace("/", "-")
         val docsDir = File(context.cacheDir, "documents")
         docsDir.mkdirs()
-        val pdfFile = File(docsDir, "Slip_Gaji_Driver_${safePeriod}.pdf")
+        val pdfFile = File(docsDir, "Laporan_Driver_Tracker_${safePeriod}.pdf")
 
         val outputStream = java.io.FileOutputStream(pdfFile)
         pdfDoc.writeTo(outputStream)
@@ -1893,14 +1845,54 @@ fun exportSlipGajiPdf(
         outputStream.close()
         pdfDoc.close()
 
-        sharePdfFile(context, pdfFile, safePeriod, period, activeDriver)
+        if (sharePdf) {
+            sharePdfFile(context, pdfFile, period, activeDriver)
+        } else {
+            val savedPath = savePdfToDownloads(context, pdfFile, safePeriod)
+            android.widget.Toast.makeText(context, "PDF tersimpan di $savedPath", android.widget.Toast.LENGTH_LONG).show()
+        }
 
     } catch (e: Exception) {
         android.widget.Toast.makeText(context, "Gagal membuat PDF: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 
-private fun sharePdfFile(context: Context, file: File, safePeriod: String, period: String, driverName: String) {
+private fun savePdfToDownloads(context: Context, sourceFile: File, safePeriod: String): String {
+    val fileName = "Laporan_Driver_Tracker_${safePeriod}_${System.currentTimeMillis()}.pdf"
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Driver Tracker")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val resolver = context.contentResolver
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: error("Folder Download tidak bisa diakses.")
+        try {
+            resolver.openOutputStream(uri, "w")?.use { output ->
+                sourceFile.inputStream().use { input -> input.copyTo(output) }
+            } ?: error("File PDF tidak bisa ditulis.")
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        } catch (error: Exception) {
+            resolver.delete(uri, null, null)
+            throw error
+        }
+        return "Download/Driver Tracker/$fileName"
+    }
+
+    if (context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+        error("Izinkan akses penyimpanan untuk menyimpan PDF di Download.")
+    }
+    val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+    if (!downloads.exists() && !downloads.mkdirs()) error("Folder Download tidak bisa dibuat.")
+    sourceFile.copyTo(File(downloads, fileName), overwrite = false)
+    return "Download/$fileName"
+}
+
+private fun sharePdfFile(context: Context, file: File, period: String, driverName: String) {
     try {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -1943,9 +1935,8 @@ fun exportSlipGajiDoc(
 
         val idLocale = Locale.forLanguageTag("id-ID")
         val printDate = SimpleDateFormat("dd MMMM yyyy, HH:mm", idLocale).format(Date())
-        val dateCode = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
-        val uniqueCode = "${dateCode}-${String.format(Locale.US, "%04d", totalTrips)}"
-        val refNumber = "SLIP/DT/${SimpleDateFormat("yyyyMM", Locale.getDefault()).format(Date())}/${String.format(Locale.US, "%04d", totalTrips)}"
+        val uniqueCode = UUID.randomUUID().toString().replace("-", "").uppercase(Locale.US).take(12)
+        val refNumber = "SLIP/DT/$uniqueCode"
 
         val pPct = if (totalTrips > 0) String.format(idLocale, "%.1f%%", (penumpangCount.toDouble() / totalTrips) * 100) else "0,0%"
         val mPct = if (totalTrips > 0) String.format(idLocale, "%.1f%%", (makananCount.toDouble() / totalTrips) * 100) else "0,0%"
@@ -1971,13 +1962,12 @@ fun exportSlipGajiDoc(
             <body>
                 <!-- Report header -->
                 <div style="text-align: center; margin-bottom: 22px;">
-                    <div style="font-size: 20pt; font-weight: 800; color: #00AA13; letter-spacing: 1px; margin: 0;">DRIVER TRACKER INDONESIA</div>
+                    <div style="font-size: 20pt; font-weight: 800; color:
                     <div style="font-size: 13pt; font-weight: bold; color: #0F172A; margin-top: 4px; text-transform: uppercase;">RINGKASAN PENDAPATAN & KINERJA</div>
                     <div style="font-size: 9pt; color: #64748B; margin-top: 2px;">Laporan Penghasilan dan Aktivitas Operasional Mitra Pengemudi</div>
                     <div style="margin-top: 10px; border-bottom: 3px double #00AA13;"></div>
                 </div>
 
-                <!-- DATA IDENTITAS MITRA -->
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px;">
                     <tr>
                         <td style="padding: 8px 12px; font-size: 9pt; color: #64748B; width: 25%;">Nama Mitra</td>
@@ -1994,12 +1984,11 @@ fun exportSlipGajiDoc(
                     <tr>
                         <td style="padding: 8px 12px; font-size: 9pt; color: #64748B;">No. Dokumen</td>
                         <td style="padding: 8px 12px; font-size: 9pt; font-family: monospace; color: #334155; font-weight: bold;">: $refNumber</td>
-                        <td style="padding: 8px 12px; font-size: 9pt; color: #64748B;">ID Registrasi</td>
+                        <td style="padding: 8px 12px; font-size: 9pt; color: #64748B;">ID Dokumen</td>
                         <td style="padding: 8px 12px; font-size: 9pt; font-family: monospace; color: #334155; font-weight: bold;">: DT-$uniqueCode</td>
                     </tr>
                 </table>
 
-                <!-- BAGIAN 1: GRID KINERJA OPERASIONAL -->
                 <div style="font-size: 10pt; font-weight: bold; color: #0F172A; border-left: 4px solid #00AA13; padding-left: 8px; margin-bottom: 8px; text-transform: uppercase;">
                     I.  RINGKASAN KINERJA OPERASIONAL
                 </div>
@@ -2018,7 +2007,6 @@ fun exportSlipGajiDoc(
                     </tr>
                 </table>
 
-                <!-- TABEL 4 KOLOM: Jenis Layanan | Jumlah Pesanan | Persentase Kontribusi | Pendapatan -->
                 <table style="width: 100%; border-collapse: collapse; margin-bottom: 22px;">
                     <thead>
                         <tr style="background-color: #00AA13; color: #FFFFFF;">
@@ -2056,7 +2044,6 @@ fun exportSlipGajiDoc(
                     </tbody>
                 </table>
 
-                <!-- BAGIAN 2: REKAPITULASI PENDAPATAN -->
                 <div style="font-size: 10pt; font-weight: bold; color: #0F172A; border-left: 4px solid #00AA13; padding-left: 8px; margin-bottom: 8px; text-transform: uppercase;">
                     II.  REKAPITULASI PENDAPATAN
                 </div>
@@ -2072,7 +2059,6 @@ fun exportSlipGajiDoc(
                     </div>
                 </div>
 
-                <!-- BAGIAN 3: OTENTIKASI & LEGALITAS DOKUMEN -->
                 <div style="font-size: 10pt; font-weight: bold; color: #0F172A; border-left: 4px solid #00AA13; padding-left: 8px; margin-bottom: 8px; text-transform: uppercase;">
                     III.  OTENTIKASI & LEGALITAS DOKUMEN
                 </div>
@@ -2089,7 +2075,7 @@ fun exportSlipGajiDoc(
                             <div style="height: 6px;"></div>
                             <div style="display: inline-block; border: 2px dashed #00AA13; background: #F0FFF4; color: #00AA13; padding: 6px 16px; border-radius: 6px; font-weight: bold; font-size: 8.5pt;">
                                 ✓ DOKUMEN DIGITAL TERVERIFIKASI<br>
-                                <span style="font-size: 7.5pt; font-weight: normal; color: #22543D;">ID Registrasi: DT-$uniqueCode</span>
+                                <span style="font-size: 7.5pt; font-weight: normal; color: #22543D;">ID Dokumen: DT-$uniqueCode</span>
                             </div>
                             <div style="height: 8px;"></div>
                             <div style="font-weight: bold; font-size: 10pt; color: #0F172A;">DRIVER TRACKER SYSTEM</div>

@@ -11,6 +11,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.app.ServiceCompat
 import com.example.drivertracker.data.local.AppDatabase
 import com.example.drivertracker.data.local.entity.OrderRecord
@@ -25,6 +26,7 @@ import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -318,6 +320,11 @@ class TrackingService : Service() {
             AppDatabase.getDatabase(applicationContext).orderDao().insertOrder(record)
 
             stopTracking()
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Exception) {
+                Log.e("TrackingService", "Gagal menyimpan pesanan dari notifikasi", error)
+                updateNotification()
             } finally {
                 isCompletingOrder = false
             }

@@ -8,9 +8,9 @@ import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
 import android.location.Location
-import android.net.Uri
 import android.os.Build
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -18,8 +18,6 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.example.drivertracker.ml.OnnxModelInfo
-import com.example.drivertracker.ml.OnnxModelManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -43,6 +41,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 
 class MainViewModel(
     application: Application,
@@ -58,6 +57,7 @@ class MainViewModel(
     }
 
     private val saveOrderMutex = Mutex()
+    private val addressLookupGeneration = AtomicLong(0L)
 
     private val fusedLocationClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(application)
@@ -74,6 +74,7 @@ class MainViewModel(
     private var isLocationClientRunning = false
 
     fun startLocationUpdates() {
+        if (TrackingRepository.trackingState.value != TrackingState.IDLE) return
         val context = getApplication<Application>()
         val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -122,11 +123,19 @@ class MainViewModel(
         }
     }
 
-    override fun onCleared() {
-        super.onCleared()
+    private fun stopLocationUpdates() {
+        if (!isLocationClientRunning) return
         try {
             fusedLocationClient.removeLocationUpdates(locationCallback)
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        } finally {
+            isLocationClientRunning = false
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopLocationUpdates()
     }
 
     val trackingState: StateFlow<TrackingState> = TrackingRepository.trackingState
@@ -159,15 +168,6 @@ class MainViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val driverName: StateFlow<String> = appPreferences.driverName
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
-
-    val showRadarHistory: StateFlow<Boolean> = appPreferences.radarShowHistory
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    val showRadarAi: StateFlow<Boolean> = appPreferences.radarShowAi
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
-
-    val customOnnxModelName: StateFlow<String> = appPreferences.customOnnxModelName
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
     val posterShowAppName: StateFlow<Boolean> = appPreferences.posterShowAppName
@@ -231,33 +231,6 @@ class MainViewModel(
     fun setPosterRouteShadowColor(value: String) = viewModelScope.launch { appPreferences.setPosterRouteShadowColor(value) }
     fun setPosterRouteShadowSize(value: Float) = viewModelScope.launch { appPreferences.setPosterRouteShadowSize(value) }
 
-    fun setRadarShowHistory(show: Boolean) {
-        viewModelScope.launch {
-            appPreferences.setRadarShowHistory(show)
-        }
-    }
-
-    fun setRadarShowAi(show: Boolean) {
-        viewModelScope.launch {
-            appPreferences.setRadarShowAi(show)
-        }
-    }
-
-    suspend fun importOnnxModel(context: Context, uri: Uri, originalName: String): Result<OnnxModelInfo> {
-        val result = OnnxModelManager.saveModelFromUri(context, uri, originalName)
-        if (result.isSuccess) {
-            val info = result.getOrThrow()
-            appPreferences.setCustomOnnxModel(info.fileName, context.filesDir.resolve("models/custom_driver_model.onnx").absolutePath)
-        }
-        return result
-    }
-
-    suspend fun removeOnnxModel(context: Context): Boolean {
-        val deleted = OnnxModelManager.deleteModel(context)
-        appPreferences.clearCustomOnnxModel()
-        return deleted
-    }
-
     private val _currentAddress = MutableStateFlow("Mencari lokasi GPS...")
     val currentAddress: StateFlow<String> = _currentAddress.asStateFlow()
 
@@ -295,21 +268,30 @@ class MainViewModel(
         list.sumOf { it.jarakTempuh }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
-    val todayPickupDistance: StateFlow<Double> = todayOrders.map { list ->
-        list.sumOf { it.jarakKePickup }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
+    val todayTotalDuration: StateFlow<Long> = todayOrders.map { list ->
+        list.sumOf { it.durasi }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
-    val todayDeliveryDistance: StateFlow<Double> = todayOrders.map { list ->
-        list.sumOf { it.jarakKeTujuan }
+    val todayAverageSpeed: StateFlow<Double> = combine(todayTotalDistance, todayTotalDuration) { distanceKm, durationSeconds ->
+        if (durationSeconds > 0L) distanceKm / (durationSeconds / 3600.0) else 0.0
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     init {
         startLocationUpdates()
 
         viewModelScope.launch {
+            var lastAddressLookupLocation: Location? = null
+            var lastAddressLookupAt = 0L
             currentLocation.collect { loc ->
                 if (loc != null) {
-                    resolveAddress(loc.latitude, loc.longitude)
+                    val now = SystemClock.elapsedRealtime()
+                    val movedEnough = lastAddressLookupLocation?.distanceTo(loc)?.let { it >= 75f } ?: true
+                    val intervalElapsed = now - lastAddressLookupAt >= 30_000L
+                    if (movedEnough || intervalElapsed) {
+                        lastAddressLookupLocation = Location(loc)
+                        lastAddressLookupAt = now
+                        resolveAddress(loc.latitude, loc.longitude)
+                    }
                 } else {
                     _currentAddress.value = "Mencari lokasi GPS..."
                 }
@@ -318,6 +300,7 @@ class MainViewModel(
 
         viewModelScope.launch {
             trackingState.collect { state ->
+                if (state == TrackingState.IDLE) startLocationUpdates() else stopLocationUpdates()
                 com.example.drivertracker.service.TrackingNotificationManager.showNotification(
                     getApplication(),
                     state = state,
@@ -330,6 +313,11 @@ class MainViewModel(
     }
 
     private fun resolveAddress(lat: Double, lng: Double) {
+        val generation = addressLookupGeneration.incrementAndGet()
+        fun updateAddress(value: String) {
+            if (addressLookupGeneration.get() == generation) _currentAddress.value = value
+        }
+
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val geocoder = Geocoder(getApplication(), Locale.forLanguageTag("id-ID"))
@@ -337,27 +325,27 @@ class MainViewModel(
                     geocoder.getFromLocation(lat, lng, 1, object : Geocoder.GeocodeListener {
                         override fun onGeocode(addresses: MutableList<Address>) {
                             if (addresses.isNotEmpty()) {
-                                _currentAddress.value = formatAddress(addresses[0])
+                                updateAddress(formatAddress(addresses[0]))
                             } else {
-                                _currentAddress.value = String.format(Locale.US, "%.5f, %.5f", lat, lng)
+                                updateAddress(String.format(Locale.US, "%.5f, %.5f", lat, lng))
                             }
                         }
 
                         override fun onError(errorMessage: String?) {
-                            _currentAddress.value = String.format(Locale.US, "%.5f, %.5f", lat, lng)
+                            updateAddress(String.format(Locale.US, "%.5f, %.5f", lat, lng))
                         }
                     })
                 } else {
                     @Suppress("DEPRECATION")
                     val addresses = geocoder.getFromLocation(lat, lng, 1)
                     if (!addresses.isNullOrEmpty()) {
-                        _currentAddress.value = formatAddress(addresses[0])
+                        updateAddress(formatAddress(addresses[0]))
                     } else {
-                        _currentAddress.value = String.format(Locale.US, "%.5f, %.5f", lat, lng)
+                        updateAddress(String.format(Locale.US, "%.5f, %.5f", lat, lng))
                     }
                 }
             } catch (_: Exception) {
-                _currentAddress.value = String.format(Locale.US, "%.5f, %.5f", lat, lng)
+                updateAddress(String.format(Locale.US, "%.5f, %.5f", lat, lng))
             }
         }
     }
@@ -454,12 +442,27 @@ class MainViewModel(
         biayaBensin: Double,
         onComplete: (String?) -> Unit
     ) {
-        if (!saveOrderMutex.tryLock()) return
+        if (jenisOrder !in setOf("Penumpang", "Makanan", "Paket")) {
+            onComplete("Pilih jenis layanan yang valid.")
+            return
+        }
+        if (!pendapatanKotor.isFinite() || pendapatanKotor <= 0.0) {
+            onComplete("Pendapatan kotor wajib diisi dan harus lebih dari Rp0.")
+            return
+        }
+        if (!biayaBensin.isFinite() || biayaBensin < 0.0) {
+            onComplete("Biaya bensin tidak valid. Periksa pengaturan konsumsi dan harga bensin.")
+            return
+        }
+        if (!saveOrderMutex.tryLock()) {
+            onComplete("Pesanan sedang disimpan. Tunggu sebentar lalu coba lagi.")
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             var failureMessage: String? = null
             try {
             val now = System.currentTimeMillis()
-            val grossIncome = pendapatanKotor.coerceAtLeast(0.0)
+            val grossIncome = pendapatanKotor
             val commissionEnabled = appPreferences.isKomisiAktif.first()
             val commissionPercent = appPreferences.persenKomisi.first().coerceIn(0f, 100f)
             val netIncome = if (commissionEnabled) {
@@ -617,27 +620,63 @@ class MainViewModel(
         var skippedCount = 0
         val newRecords = mutableListOf<OrderRecord>()
 
+        data class FallbackKey(
+            val tanggal: String,
+            val jamPickup: Long,
+            val jamSelesai: Long,
+            val jenisOrder: String,
+            val latitudePickup: Double,
+            val longitudePickup: Double
+        )
+        data class DuplicateCandidate(
+            val jamMulai: Long,
+            val pendapatanBersih: Double,
+            val jarakTempuh: Double
+        )
+
+        val knownStartTimes = HashSet<Long>(currentOrders.size)
+        val fallbackCandidates = HashMap<FallbackKey, MutableList<DuplicateCandidate>>(currentOrders.size)
+
+        fun indexOrder(order: OrderRecord) {
+            if (order.jamMulai > 0L) knownStartTimes += order.jamMulai
+            val key = FallbackKey(
+                order.tanggal,
+                order.jamPickup,
+                order.jamSelesai,
+                order.jenisOrder,
+                order.latitudePickup,
+                order.longitudePickup
+            )
+            fallbackCandidates.getOrPut(key) { mutableListOf() } += DuplicateCandidate(
+                order.jamMulai,
+                order.pendapatanBersih,
+                order.jarakTempuh
+            )
+        }
+
+        currentOrders.forEach(::indexOrder)
+
         for (i in 0 until jsonArray.length()) {
             val obj = jsonArray.getJSONObject(i)
             val jamMulai = obj.optLong("jamMulai", 0L)
             val tanggal = obj.optString("tanggal", "")
             val pendapatanBersih = obj.optDouble("pendapatanBersih", 0.0)
             val jarakTempuh = obj.optDouble("jarakTempuh", 0.0)
-
-            fun matchesExisting(existing: OrderRecord): Boolean {
-                if (jamMulai > 0L && existing.jamMulai > 0L) {
-                    return existing.jamMulai == jamMulai
-                }
-                return existing.tanggal == tanggal &&
-                        existing.jamPickup == obj.optLong("jamPickup", 0L) &&
-                        existing.jamSelesai == obj.optLong("jamSelesai", 0L) &&
-                        existing.jenisOrder == obj.optString("jenisOrder", "Penumpang") &&
-                        Math.abs(existing.pendapatanBersih - pendapatanBersih) < 0.01 &&
-                        Math.abs(existing.jarakTempuh - jarakTempuh) < 0.01 &&
-                        existing.latitudePickup == obj.optDouble("latitudePickup", 0.0) &&
-                        existing.longitudePickup == obj.optDouble("longitudePickup", 0.0)
-            }
-            val isDuplicate = (currentOrders.asSequence() + newRecords.asSequence()).any(::matchesExisting)
+            val jenisOrder = obj.optString("jenisOrder", "Penumpang")
+            val fallbackKey = FallbackKey(
+                tanggal = tanggal,
+                jamPickup = obj.optLong("jamPickup", 0L),
+                jamSelesai = obj.optLong("jamSelesai", 0L),
+                jenisOrder = jenisOrder,
+                latitudePickup = obj.optDouble("latitudePickup", 0.0),
+                longitudePickup = obj.optDouble("longitudePickup", 0.0)
+            )
+            val isDuplicate = (jamMulai > 0L && jamMulai in knownStartTimes) ||
+                    fallbackCandidates[fallbackKey].orEmpty().any { candidate ->
+                        !(jamMulai > 0L && candidate.jamMulai > 0L) &&
+                                Math.abs(candidate.pendapatanBersih - pendapatanBersih) < 0.01 &&
+                                Math.abs(candidate.jarakTempuh - jarakTempuh) < 0.01
+                    }
 
             if (isDuplicate) {
                 skippedCount++
@@ -649,7 +688,7 @@ class MainViewModel(
                     jamMulai = jamMulai,
                     jamPickup = obj.optLong("jamPickup", 0L),
                     jamSelesai = obj.optLong("jamSelesai", 0L),
-                    jenisOrder = obj.optString("jenisOrder", "Penumpang"),
+                    jenisOrder = jenisOrder,
                     pendapatanBersih = pendapatanBersih,
                     pendapatanKotor = obj.optDouble("pendapatanKotor", 0.0),
                     durasi = obj.optLong("durasi", 0L),
@@ -670,6 +709,7 @@ class MainViewModel(
                     biayaBensin = obj.optDouble("biayaBensin", 0.0)
                 )
                 newRecords.add(record)
+                indexOrder(record)
                 importedCount++
             }
         }
