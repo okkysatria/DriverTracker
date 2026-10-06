@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -69,16 +70,6 @@ fun SettingsScreen(
     val showRadarHistory by viewModel.showRadarHistory.collectAsStateWithLifecycle()
     val showRadarAi by viewModel.showRadarAi.collectAsStateWithLifecycle()
     val customOnnxModelName by viewModel.customOnnxModelName.collectAsStateWithLifecycle()
-
-    val posterShowAppName by viewModel.posterShowAppName.collectAsStateWithLifecycle()
-    val posterShowDriverName by viewModel.posterShowDriverName.collectAsStateWithLifecycle()
-    val posterShowDistance by viewModel.posterShowDistance.collectAsStateWithLifecycle()
-    val posterShowIncome by viewModel.posterShowIncome.collectAsStateWithLifecycle()
-    val posterShowRouteLine by viewModel.posterShowRouteLine.collectAsStateWithLifecycle()
-    val posterShowDuration by viewModel.posterShowDuration.collectAsStateWithLifecycle()
-    val posterShowAvgSpeed by viewModel.posterShowAvgSpeed.collectAsStateWithLifecycle()
-    val posterShowMaxSpeed by viewModel.posterShowMaxSpeed.collectAsStateWithLifecycle()
-    val posterRouteLineColor by viewModel.posterRouteLineColor.collectAsStateWithLifecycle()
 
     var isImportingOnnx by remember { mutableStateOf(false) }
     var onnxImportMessage by remember { mutableStateOf("") }
@@ -827,184 +818,6 @@ fun SettingsScreen(
             }
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Brush,
-                        contentDescription = null,
-                        tint = Color(0xFF00AA13)
-                    )
-                    Column {
-                        Text(
-                            text = "Elemen poster rute",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Atur info yang ditampilkan pada poster rute",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-
-                PosterSettingToggleRow(
-                    icon = Icons.Rounded.Title,
-                    title = "Nama Aplikasi",
-                    subtitle = "Tampilkan 'DRIVER TRACKER' di atas poster",
-                    checked = posterShowAppName,
-                    onCheckedChange = { viewModel.setPosterShowAppName(it) }
-                )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                PosterSettingToggleRow(
-                    icon = Icons.Rounded.Person,
-                    title = "Nama Driver",
-                    subtitle = "Tampilkan label nama pengemudi",
-                    checked = posterShowDriverName,
-                    onCheckedChange = { viewModel.setPosterShowDriverName(it) }
-                )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                PosterSettingToggleRow(
-                    icon = Icons.Rounded.Polyline,
-                    title = "Garis Rute",
-                    subtitle = "Gambarkan jejak rute GPS pada kanvas",
-                    checked = posterShowRouteLine,
-                    onCheckedChange = { viewModel.setPosterShowRouteLine(it) }
-                )
-
-                if (posterShowRouteLine) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "Warna garis GPS",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        val colorOptions = listOf(
-                            Pair("AUTO", "Otomatis"),
-                            Pair("#22D3EE", "Biru laut"),
-                            Pair("#34D399", "Mint"),
-                            Pair("#818CF8", "Indigo"),
-                            Pair("#C084FC", "Ungu"),
-                            Pair("#FB7185", "Coral"),
-                            Pair("#FBBF24", "Amber"),
-                            Pair("#F8FAFC", "Putih")
-                        )
-                        val colorScrollState = rememberScrollState()
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(colorScrollState)
-                        ) {
-                            colorOptions.forEach { colorOption ->
-                                val colorCode = colorOption.first
-                                val label = colorOption.second
-                                val isSelected = posterRouteLineColor == colorCode
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = { viewModel.setPosterRouteLineColor(colorCode) },
-                                    label = { Text(label, fontSize = 11.sp) },
-                                    leadingIcon = {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(12.dp)
-                                                .clip(CircleShape)
-                                                .background(
-                                                    if (colorCode == "AUTO") Color(0xFF22D3EE)
-                                                    else Color(android.graphics.Color.parseColor(colorCode))
-                                                )
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    ),
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                PosterSettingToggleRow(
-                    icon = Icons.Rounded.Straighten,
-                    title = "Total Jarak",
-                    subtitle = "Tampilkan total jarak tempuh (KM)",
-                    checked = posterShowDistance,
-                    onCheckedChange = { viewModel.setPosterShowDistance(it) }
-                )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                PosterSettingToggleRow(
-                    icon = Icons.Rounded.Payments,
-                    title = "Pendapatan",
-                    subtitle = "Tampilkan nominal pendapatan (angka saja tanpa label)",
-                    checked = posterShowIncome,
-                    onCheckedChange = { viewModel.setPosterShowIncome(it) }
-                )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                PosterSettingToggleRow(
-                    icon = Icons.Rounded.Timer,
-                    title = "Durasi Waktu",
-                    subtitle = "Tampilkan lama durasi perjalanan (bawaan: nonaktif)",
-                    checked = posterShowDuration,
-                    onCheckedChange = { viewModel.setPosterShowDuration(it) }
-                )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                PosterSettingToggleRow(
-                    icon = Icons.Rounded.Speed,
-                    title = "Rata-rata Kecepatan",
-                    subtitle = "Tampilkan kecepatan rata-rata km/j (awalnya nonaktif)",
-                    checked = posterShowAvgSpeed,
-                    onCheckedChange = { viewModel.setPosterShowAvgSpeed(it) }
-                )
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
-
-                PosterSettingToggleRow(
-                    icon = Icons.Rounded.Bolt,
-                    title = "Kecepatan Maksimum",
-                    subtitle = "Tampilkan kecepatan maksimum km/j (awalnya nonaktif)",
-                    checked = posterShowMaxSpeed,
-                    onCheckedChange = { viewModel.setPosterShowMaxSpeed(it) }
-                )
-            }
-        }
-
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1095,6 +908,387 @@ private fun shareExportFile(context: Context, content: String, fileName: String,
         context.startActivity(Intent.createChooser(shareIntent, "Bagikan / Simpan File Backup"))
     } catch (e: Exception) {
         Toast.makeText(context, "Gagal mengekspor file: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+@Composable
+fun PosterSettingsContent(viewModel: MainViewModel) {
+    val posterShowAppName by viewModel.posterShowAppName.collectAsStateWithLifecycle()
+    val posterShowDriverName by viewModel.posterShowDriverName.collectAsStateWithLifecycle()
+    val posterShowDistance by viewModel.posterShowDistance.collectAsStateWithLifecycle()
+    val posterShowIncome by viewModel.posterShowIncome.collectAsStateWithLifecycle()
+    val posterShowRouteLine by viewModel.posterShowRouteLine.collectAsStateWithLifecycle()
+    val posterShowDuration by viewModel.posterShowDuration.collectAsStateWithLifecycle()
+    val posterShowAvgSpeed by viewModel.posterShowAvgSpeed.collectAsStateWithLifecycle()
+    val posterShowMaxSpeed by viewModel.posterShowMaxSpeed.collectAsStateWithLifecycle()
+    val posterRouteLineColor by viewModel.posterRouteLineColor.collectAsStateWithLifecycle()
+    val posterTextOutlineEnabled by viewModel.posterTextOutlineEnabled.collectAsStateWithLifecycle()
+    val posterTextOutlineColor by viewModel.posterTextOutlineColor.collectAsStateWithLifecycle()
+    val posterTextOutlineSize by viewModel.posterTextOutlineSize.collectAsStateWithLifecycle()
+    val posterTextShadowEnabled by viewModel.posterTextShadowEnabled.collectAsStateWithLifecycle()
+    val posterTextShadowColor by viewModel.posterTextShadowColor.collectAsStateWithLifecycle()
+    val posterTextShadowSize by viewModel.posterTextShadowSize.collectAsStateWithLifecycle()
+    val posterRouteOutlineEnabled by viewModel.posterRouteOutlineEnabled.collectAsStateWithLifecycle()
+    val posterRouteOutlineColor by viewModel.posterRouteOutlineColor.collectAsStateWithLifecycle()
+    val posterRouteOutlineSize by viewModel.posterRouteOutlineSize.collectAsStateWithLifecycle()
+    val posterRouteShadowEnabled by viewModel.posterRouteShadowEnabled.collectAsStateWithLifecycle()
+    val posterRouteShadowColor by viewModel.posterRouteShadowColor.collectAsStateWithLifecycle()
+    val posterRouteShadowSize by viewModel.posterRouteShadowSize.collectAsStateWithLifecycle()
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Brush,
+                        contentDescription = null,
+                        tint = Color(0xFF00AA13)
+                    )
+                    Column {
+                        Text(
+                            text = "Elemen poster rute",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Atur info yang ditampilkan pada poster rute",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                PosterSettingToggleRow(
+                    icon = Icons.Rounded.Title,
+                    title = "Nama Aplikasi",
+                    subtitle = "Tampilkan 'DRIVER TRACKER' di atas poster",
+                    checked = posterShowAppName,
+                    onCheckedChange = { viewModel.setPosterShowAppName(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                PosterSettingToggleRow(
+                    icon = Icons.Rounded.Person,
+                    title = "Nama Driver",
+                    subtitle = "Tampilkan label nama pengemudi",
+                    checked = posterShowDriverName,
+                    onCheckedChange = { viewModel.setPosterShowDriverName(it) }
+                )
+
+                PosterStrokeShadowControls(
+                    title = "Gaya teks poster",
+                    outlineEnabled = posterTextOutlineEnabled,
+                    onOutlineEnabledChange = { viewModel.setPosterTextOutlineEnabled(it) },
+                    outlineColor = posterTextOutlineColor,
+                    onOutlineColorChange = { viewModel.setPosterTextOutlineColor(it) },
+                    outlineSize = posterTextOutlineSize,
+                    onOutlineSizeChange = { viewModel.setPosterTextOutlineSize(it) },
+                    shadowEnabled = posterTextShadowEnabled,
+                    onShadowEnabledChange = { viewModel.setPosterTextShadowEnabled(it) },
+                    shadowColor = posterTextShadowColor,
+                    onShadowColorChange = { viewModel.setPosterTextShadowColor(it) },
+                    shadowSize = posterTextShadowSize,
+                    onShadowSizeChange = { viewModel.setPosterTextShadowSize(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                PosterSettingToggleRow(
+                    icon = Icons.Rounded.Polyline,
+                    title = "Garis Rute",
+                    subtitle = "Gambarkan jejak rute GPS pada kanvas",
+                    checked = posterShowRouteLine,
+                    onCheckedChange = { viewModel.setPosterShowRouteLine(it) }
+                )
+
+                if (posterShowRouteLine) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "Warna garis GPS",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        val colorOptions = listOf(
+                            Pair("AUTO", "Otomatis"),
+                            Pair("#22D3EE", "Biru laut"),
+                            Pair("#34D399", "Mint"),
+                            Pair("#818CF8", "Indigo"),
+                            Pair("#C084FC", "Ungu"),
+                            Pair("#FB7185", "Coral"),
+                            Pair("#FBBF24", "Amber"),
+                            Pair("#F8FAFC", "Putih")
+                        )
+                        val colorScrollState = rememberScrollState()
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(colorScrollState)
+                        ) {
+                            colorOptions.forEach { colorOption ->
+                                val colorCode = colorOption.first
+                                val label = colorOption.second
+                                val isSelected = posterRouteLineColor == colorCode
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { viewModel.setPosterRouteLineColor(colorCode) },
+                                    label = { Text(label, fontSize = 11.sp) },
+                                    leadingIcon = {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (colorCode == "AUTO") Color(0xFF22D3EE)
+                                                    else Color(android.graphics.Color.parseColor(colorCode))
+                                                )
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    PosterStrokeShadowControls(
+                        title = "Gaya garis rute",
+                        outlineEnabled = posterRouteOutlineEnabled,
+                        onOutlineEnabledChange = { viewModel.setPosterRouteOutlineEnabled(it) },
+                        outlineColor = posterRouteOutlineColor,
+                        onOutlineColorChange = { viewModel.setPosterRouteOutlineColor(it) },
+                        outlineSize = posterRouteOutlineSize,
+                        onOutlineSizeChange = { viewModel.setPosterRouteOutlineSize(it) },
+                        shadowEnabled = posterRouteShadowEnabled,
+                        onShadowEnabledChange = { viewModel.setPosterRouteShadowEnabled(it) },
+                        shadowColor = posterRouteShadowColor,
+                        onShadowColorChange = { viewModel.setPosterRouteShadowColor(it) },
+                        shadowSize = posterRouteShadowSize,
+                        onShadowSizeChange = { viewModel.setPosterRouteShadowSize(it) }
+                    )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                PosterSettingToggleRow(
+                    icon = Icons.Rounded.Straighten,
+                    title = "Total Jarak",
+                    subtitle = "Tampilkan total jarak tempuh (KM)",
+                    checked = posterShowDistance,
+                    onCheckedChange = { viewModel.setPosterShowDistance(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                PosterSettingToggleRow(
+                    icon = Icons.Rounded.Payments,
+                    title = "Pendapatan",
+                    subtitle = "Tampilkan nominal pendapatan (angka saja tanpa label)",
+                    checked = posterShowIncome,
+                    onCheckedChange = { viewModel.setPosterShowIncome(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                PosterSettingToggleRow(
+                    icon = Icons.Rounded.Timer,
+                    title = "Durasi Waktu",
+                    subtitle = "Tampilkan lama durasi perjalanan (bawaan: nonaktif)",
+                    checked = posterShowDuration,
+                    onCheckedChange = { viewModel.setPosterShowDuration(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                PosterSettingToggleRow(
+                    icon = Icons.Rounded.Speed,
+                    title = "Rata-rata Kecepatan",
+                    subtitle = "Tampilkan kecepatan rata-rata km/j (awalnya nonaktif)",
+                    checked = posterShowAvgSpeed,
+                    onCheckedChange = { viewModel.setPosterShowAvgSpeed(it) }
+                )
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+
+                PosterSettingToggleRow(
+                    icon = Icons.Rounded.Bolt,
+                    title = "Kecepatan Maksimum",
+                    subtitle = "Tampilkan kecepatan maksimum km/j (awalnya nonaktif)",
+                    checked = posterShowMaxSpeed,
+                    onCheckedChange = { viewModel.setPosterShowMaxSpeed(it) }
+                )
+            }
+        }
+}
+
+@Composable
+private fun PosterStrokeShadowControls(
+    title: String,
+    outlineEnabled: Boolean,
+    onOutlineEnabledChange: (Boolean) -> Unit,
+    outlineColor: String,
+    onOutlineColorChange: (String) -> Unit,
+    outlineSize: Float,
+    onOutlineSizeChange: (Float) -> Unit,
+    shadowEnabled: Boolean,
+    onShadowEnabledChange: (Boolean) -> Unit,
+    shadowColor: String,
+    onShadowColorChange: (String) -> Unit,
+    shadowSize: Float,
+    onShadowSizeChange: (Float) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            PosterSettingToggleRow(
+                icon = Icons.Rounded.Brush,
+                title = "Outline / stroke",
+                subtitle = "Garis tepi pada elemen",
+                checked = outlineEnabled,
+                onCheckedChange = onOutlineEnabledChange
+            )
+            if (outlineEnabled) {
+                PosterEffectAppearanceControls(
+                    label = "Warna dan ketebalan outline",
+                    color = outlineColor,
+                    onColorChange = onOutlineColorChange,
+                    size = outlineSize,
+                    onSizeChange = onOutlineSizeChange
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            PosterSettingToggleRow(
+                icon = Icons.Rounded.Layers,
+                title = "Drop shadow",
+                subtitle = "Bayangan di belakang elemen",
+                checked = shadowEnabled,
+                onCheckedChange = onShadowEnabledChange
+            )
+            if (shadowEnabled) {
+                PosterEffectAppearanceControls(
+                    label = "Warna dan ukuran shadow",
+                    color = shadowColor,
+                    onColorChange = onShadowColorChange,
+                    size = shadowSize,
+                    onSizeChange = onShadowSizeChange
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PosterEffectAppearanceControls(
+    label: String,
+    color: String,
+    onColorChange: (String) -> Unit,
+    size: Float,
+    onSizeChange: (Float) -> Unit
+) {
+    val colors = listOf(
+        "#000000" to "Hitam",
+        "#FFFFFF" to "Putih",
+        "#00AA13" to "Hijau",
+        "#22D3EE" to "Biru",
+        "#FBBF24" to "Kuning",
+        "#FF1744" to "Merah"
+    )
+    var sliderValue by remember(size) { mutableFloatStateOf(size) }
+
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            colors.forEach { (hex, name) ->
+                val selected = color.equals(hex, ignoreCase = true)
+                FilterChip(
+                    selected = selected,
+                    onClick = { onColorChange(hex) },
+                    label = { Text(name, fontSize = 10.sp) },
+                    leadingIcon = {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .clip(CircleShape)
+                                .background(Color(android.graphics.Color.parseColor(hex)))
+                                .then(
+                                    if (hex == "#FFFFFF") Modifier.border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outline,
+                                        CircleShape
+                                    ) else Modifier
+                                )
+                        )
+                    },
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("Ketebalan", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Slider(
+                modifier = Modifier.weight(1f),
+                value = sliderValue,
+                onValueChange = { sliderValue = it },
+                onValueChangeFinished = { onSizeChange(sliderValue) },
+                valueRange = 0.5f..8f,
+                colors = SliderDefaults.colors(thumbColor = Color(0xFF00AA13), activeTrackColor = Color(0xFF00AA13))
+            )
+            Text(String.format(Locale.US, "%.1f", sliderValue), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+        }
     }
 }
 

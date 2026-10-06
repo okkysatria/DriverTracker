@@ -7,7 +7,6 @@ import com.example.drivertracker.ui.utils.toRupiahString
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.max
-import kotlin.math.min
 
 enum class PosterAspectRatio(val width: Int, val height: Int, val label: String) {
     SQUARE_1_1(1080, 1080, "1:1 Persegi"),
@@ -30,6 +29,32 @@ data class PosterElementVisibility(
     val showDuration: Boolean = false,
     val showAvgSpeed: Boolean = false,
     val showMaxSpeed: Boolean = false
+)
+
+data class PosterEffects(
+    val textOutlineEnabled: Boolean = false,
+    val textOutlineColor: String = "#000000",
+    val textOutlineSize: Float = 1.5f,
+    val textShadowEnabled: Boolean = true,
+    val textShadowColor: String = "#000000",
+    val textShadowSize: Float = 2f,
+    val routeOutlineEnabled: Boolean = false,
+    val routeOutlineColor: String = "#FFFFFF",
+    val routeOutlineSize: Float = 2f,
+    val routeShadowEnabled: Boolean = true,
+    val routeShadowColor: String = "#000000",
+    val routeShadowSize: Float = 2f
+)
+
+data class PosterDraftState(
+    val selectedDateMode: String = "LIVE",
+    val selectedCustomDateMillis: Long? = null,
+    val selectedAspectRatio: PosterAspectRatio = PosterAspectRatio.SQUARE_1_1,
+    val selectedPreset: PosterPreset = PosterPreset.NIGHT,
+    val customPhotoBitmap: Bitmap? = null,
+    val photoScale: Float = 1f,
+    val photoOffsetX: Float = 0f,
+    val photoOffsetY: Float = 0f
 )
 
 data class PosterData(
@@ -56,7 +81,8 @@ object PosterBitmapGenerator {
         photoOffsetY: Float = 0f,
         data: PosterData,
         visibility: PosterElementVisibility = PosterElementVisibility(),
-        routeLineColor: String = "AUTO"
+        routeLineColor: String = "AUTO",
+        effects: PosterEffects = PosterEffects()
     ): Bitmap {
         val width = aspectRatio.width
         val height = aspectRatio.height
@@ -66,7 +92,7 @@ object PosterBitmapGenerator {
 
         drawBackground(canvas, width, height, preset, customPhotoBitmap, photoScale, photoOffsetX, photoOffsetY)
 
-        drawHeader(canvas, width, data, preset, visibility)
+        drawHeader(canvas, width, data, preset, visibility, effects)
 
         val isStory = aspectRatio == PosterAspectRatio.STORY_9_16
         val padX = width * 0.08f
@@ -82,6 +108,7 @@ object PosterBitmapGenerator {
                 bottom = height - padBottom,
                 gpsPoints = data.gpsPoints,
                 routeLineColor = routeLineColor,
+                effects = effects,
                 emptyStateColor = if (preset == PosterPreset.LIGHT) {
                     Color.rgb(100, 116, 139)
                 } else {
@@ -143,9 +170,6 @@ object PosterBitmapGenerator {
             canvas.clipRect(0, 0, width, height)
             val dstRect = RectF(left, top, left + finalW, top + finalH)
             canvas.drawBitmap(customPhotoBitmap, null, dstRect, paint)
-
-            paint.color = Color.argb(128, 0, 0, 0)
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
             canvas.restore()
             return
         }
@@ -192,7 +216,8 @@ object PosterBitmapGenerator {
         width: Int,
         data: PosterData,
         preset: PosterPreset,
-        visibility: PosterElementVisibility
+        visibility: PosterElementVisibility,
+        effects: PosterEffects
     ) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         val isLight = preset == PosterPreset.LIGHT
@@ -202,7 +227,7 @@ object PosterBitmapGenerator {
             paint.color = if (isLight) Color.parseColor("#00AA13") else Color.parseColor("#00FF66")
             paint.textSize = 32f
             paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            canvas.drawText("DRIVER TRACKER", 60f, currentY, paint)
+            drawStyledHeaderText(canvas, "DRIVER TRACKER", 60f, currentY, paint, effects)
             currentY += 40f
         }
 
@@ -211,7 +236,7 @@ object PosterBitmapGenerator {
             paint.textSize = 20f
             paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             val nameText = "DRIVER: ${data.driverName.uppercase()}"
-            canvas.drawText(nameText, 60f, currentY, paint)
+            drawStyledHeaderText(canvas, nameText, 60f, currentY, paint, effects)
         }
 
         if (data.dateFormatted.isNotBlank()) {
@@ -219,10 +244,43 @@ object PosterBitmapGenerator {
             paint.textSize = 20f
             paint.typeface = Typeface.DEFAULT
             paint.textAlign = Paint.Align.RIGHT
-            canvas.drawText(data.dateFormatted, (width - 60).toFloat(), 90f, paint)
+            drawStyledHeaderText(canvas, data.dateFormatted, (width - 60).toFloat(), 90f, paint, effects)
             paint.textAlign = Paint.Align.LEFT
         }
     }
+
+    private fun drawStyledHeaderText(
+        canvas: Canvas,
+        text: String,
+        x: Float,
+        y: Float,
+        fillPaint: Paint,
+        effects: PosterEffects
+    ) {
+        val scale = canvas.width / 360f
+        val strokePaint = Paint(fillPaint).apply {
+            style = Paint.Style.STROKE
+            strokeJoin = Paint.Join.ROUND
+            strokeWidth = effects.textOutlineSize * scale * 2f
+            color = parsePosterColor(effects.textOutlineColor, Color.BLACK)
+        }
+        if (effects.textOutlineEnabled) canvas.drawText(text, x, y, strokePaint)
+
+        if (effects.textShadowEnabled) {
+            val shadowColor = parsePosterColor(effects.textShadowColor, Color.BLACK)
+            fillPaint.setShadowLayer(
+                effects.textShadowSize * scale * 2f,
+                0f,
+                effects.textShadowSize * scale,
+                Color.argb(120, Color.red(shadowColor), Color.green(shadowColor), Color.blue(shadowColor))
+            )
+        }
+        canvas.drawText(text, x, y, fillPaint)
+        fillPaint.clearShadowLayer()
+    }
+
+    private fun parsePosterColor(value: String, fallback: Int): Int =
+        try { Color.parseColor(value) } catch (_: IllegalArgumentException) { fallback }
 
     private fun drawRouteTrack(
         canvas: Canvas,
@@ -232,6 +290,7 @@ object PosterBitmapGenerator {
         bottom: Float,
         gpsPoints: List<GpsPoint>,
         routeLineColor: String = "AUTO",
+        effects: PosterEffects,
         emptyStateColor: Int
     ) {
         if (gpsPoints.size < 2) {
@@ -249,42 +308,15 @@ object PosterBitmapGenerator {
             )
             return
         }
-        val points = gpsPoints
-
-        var minLat = Double.MAX_VALUE
-        var maxLat = -Double.MAX_VALUE
-        var minLng = Double.MAX_VALUE
-        var maxLng = -Double.MAX_VALUE
-
-        for (pt in points) {
-            if (pt.lat < minLat) minLat = pt.lat
-            if (pt.lat > maxLat) maxLat = pt.lat
-            if (pt.lng < minLng) minLng = pt.lng
-            if (pt.lng > maxLng) maxLng = pt.lng
-        }
-
-        val latDiff = max(maxLat - minLat, 0.0001)
-        val lngDiff = max(maxLng - minLng, 0.0001)
-
-        val rectW = right - left
-        val rectH = bottom - top
-
-        val scaleX = rectW / lngDiff
-        val scaleY = rectH / latDiff
-        val scale = min(scaleX, scaleY)
-
-        val trackW = lngDiff * scale
-        val trackH = latDiff * scale
-
-        val offsetX = left + (rectW - trackW) / 2f
-        val offsetY = top + (rectH - trackH) / 2f
-
-        val mappedPoints = points.map { pt ->
-            val x = offsetX + (pt.lng - minLng) * scale
-
-            val y = offsetY + (maxLat - pt.lat) * scale
-            PointF(x.toFloat(), y.toFloat()) to pt.speed
-        }
+        val mappedPoints = RouteCanvasProjection.project(
+            gpsPoints = gpsPoints,
+            canvasWidth = canvas.width.toFloat(),
+            canvasHeight = canvas.height.toFloat(),
+            sidePaddingFraction = left / canvas.width.toFloat(),
+            topPaddingFraction = top / canvas.height.toFloat(),
+            bottomPaddingFraction = (canvas.height - bottom) / canvas.height.toFloat()
+        ).map { PointF(it.x, it.y) to it.speed }
+        val routeScale = canvas.width / 360f
 
         val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
@@ -318,9 +350,12 @@ object PosterBitmapGenerator {
                 }
             }
 
-            glowPaint.color = Color.argb(105, 0, 0, 0)
-            glowPaint.strokeWidth = 10f
-            canvas.drawLine(p1.x, p1.y, p2.x, p2.y, glowPaint)
+            if (effects.routeOutlineEnabled) {
+                glowPaint.color = parsePosterColor(effects.routeOutlineColor, Color.WHITE)
+                glowPaint.alpha = 255
+                glowPaint.strokeWidth = 6f + effects.routeOutlineSize * routeScale * 2f
+                canvas.drawLine(p1.x, p1.y, p2.x, p2.y, glowPaint)
+            }
 
             if (isCustomColor || speed > 30f) {
                 glowPaint.color = if (isCustomColor) {
@@ -334,7 +369,17 @@ object PosterBitmapGenerator {
 
             linePaint.color = color
             linePaint.strokeWidth = 6f
+            if (effects.routeShadowEnabled) {
+                val shadowColor = parsePosterColor(effects.routeShadowColor, Color.BLACK)
+                linePaint.setShadowLayer(
+                    effects.routeShadowSize * routeScale * 2f,
+                    0f,
+                    effects.routeShadowSize * routeScale,
+                    Color.argb(110, Color.red(shadowColor), Color.green(shadowColor), Color.blue(shadowColor))
+                )
+            }
             canvas.drawLine(p1.x, p1.y, p2.x, p2.y, linePaint)
+            linePaint.clearShadowLayer()
         }
 
         if (mappedPoints.isNotEmpty()) {
@@ -351,11 +396,10 @@ object PosterBitmapGenerator {
     private fun drawPin(canvas: Canvas, x: Float, y: Float, label: String, color: Int) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        paint.color = Color.argb(100, Color.red(color), Color.green(color), Color.blue(color))
-        canvas.drawCircle(x, y, 18f, paint)
-
+        paint.setShadowLayer(4f, 0f, 2f, Color.argb(110, 0, 0, 0))
         paint.color = color
         canvas.drawCircle(x, y, 12f, paint)
+        paint.clearShadowLayer()
 
         paint.color = Color.WHITE
         paint.textSize = 12f
@@ -447,7 +491,9 @@ object PosterBitmapGenerator {
         val rect = RectF(left, top, right, actualBottom)
         paint.color = Color.argb(210, 15, 20, 28)
         paint.style = Paint.Style.FILL
+        paint.setShadowLayer(8f, 0f, 3f, Color.argb(85, 0, 0, 0))
         canvas.drawRoundRect(rect, 32f, 32f, paint)
+        paint.clearShadowLayer()
 
         paint.color = Color.argb(60, 255, 255, 255)
         paint.style = Paint.Style.STROKE

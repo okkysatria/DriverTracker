@@ -149,19 +149,6 @@ fun SmartHeatmapScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
 
-            Surface(
-                shape = CircleShape,
-                color = Color(0xFF00AA13).copy(alpha = 0.15f)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Radar,
-                    contentDescription = null,
-                    tint = Color(0xFF00AA13),
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .size(24.dp)
-                )
-            }
         }
 
         Card(

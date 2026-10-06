@@ -32,6 +32,7 @@ import com.example.drivertracker.data.preferences.AppPreferences
 import com.example.drivertracker.data.repository.TrackingRepository
 import com.example.drivertracker.data.repository.TrackingState
 import com.example.drivertracker.service.ServiceActionReceiver
+import com.example.drivertracker.ui.screens.routeposter.PosterDraftState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -48,6 +49,13 @@ class MainViewModel(
     private val orderDao: OrderDao,
     private val appPreferences: AppPreferences
 ) : AndroidViewModel(application) {
+
+    private val _posterDraft = MutableStateFlow(PosterDraftState())
+    val posterDraft = _posterDraft.asStateFlow()
+
+    fun updatePosterDraft(update: (PosterDraftState) -> PosterDraftState) {
+        _posterDraft.update(update)
+    }
 
     private val saveOrderMutex = Mutex()
 
@@ -188,6 +196,19 @@ class MainViewModel(
     val posterRouteLineColor: StateFlow<String> = appPreferences.posterRouteLineColor
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "AUTO")
 
+    val posterTextOutlineEnabled = appPreferences.posterTextOutlineEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val posterTextOutlineColor = appPreferences.posterTextOutlineColor.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "#000000")
+    val posterTextOutlineSize = appPreferences.posterTextOutlineSize.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.5f)
+    val posterTextShadowEnabled = appPreferences.posterTextShadowEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val posterTextShadowColor = appPreferences.posterTextShadowColor.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "#000000")
+    val posterTextShadowSize = appPreferences.posterTextShadowSize.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 2f)
+    val posterRouteOutlineEnabled = appPreferences.posterRouteOutlineEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val posterRouteOutlineColor = appPreferences.posterRouteOutlineColor.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "#FFFFFF")
+    val posterRouteOutlineSize = appPreferences.posterRouteOutlineSize.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 2f)
+    val posterRouteShadowEnabled = appPreferences.posterRouteShadowEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+    val posterRouteShadowColor = appPreferences.posterRouteShadowColor.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "#000000")
+    val posterRouteShadowSize = appPreferences.posterRouteShadowSize.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 2f)
+
     fun setPosterShowAppName(show: Boolean) = viewModelScope.launch { appPreferences.setPosterShowAppName(show) }
     fun setPosterShowDriverName(show: Boolean) = viewModelScope.launch { appPreferences.setPosterShowDriverName(show) }
     fun setPosterShowDistance(show: Boolean) = viewModelScope.launch { appPreferences.setPosterShowDistance(show) }
@@ -197,6 +218,18 @@ class MainViewModel(
     fun setPosterShowAvgSpeed(show: Boolean) = viewModelScope.launch { appPreferences.setPosterShowAvgSpeed(show) }
     fun setPosterShowMaxSpeed(show: Boolean) = viewModelScope.launch { appPreferences.setPosterShowMaxSpeed(show) }
     fun setPosterRouteLineColor(color: String) = viewModelScope.launch { appPreferences.setPosterRouteLineColor(color) }
+    fun setPosterTextOutlineEnabled(value: Boolean) = viewModelScope.launch { appPreferences.setPosterTextOutlineEnabled(value) }
+    fun setPosterTextOutlineColor(value: String) = viewModelScope.launch { appPreferences.setPosterTextOutlineColor(value) }
+    fun setPosterTextOutlineSize(value: Float) = viewModelScope.launch { appPreferences.setPosterTextOutlineSize(value) }
+    fun setPosterTextShadowEnabled(value: Boolean) = viewModelScope.launch { appPreferences.setPosterTextShadowEnabled(value) }
+    fun setPosterTextShadowColor(value: String) = viewModelScope.launch { appPreferences.setPosterTextShadowColor(value) }
+    fun setPosterTextShadowSize(value: Float) = viewModelScope.launch { appPreferences.setPosterTextShadowSize(value) }
+    fun setPosterRouteOutlineEnabled(value: Boolean) = viewModelScope.launch { appPreferences.setPosterRouteOutlineEnabled(value) }
+    fun setPosterRouteOutlineColor(value: String) = viewModelScope.launch { appPreferences.setPosterRouteOutlineColor(value) }
+    fun setPosterRouteOutlineSize(value: Float) = viewModelScope.launch { appPreferences.setPosterRouteOutlineSize(value) }
+    fun setPosterRouteShadowEnabled(value: Boolean) = viewModelScope.launch { appPreferences.setPosterRouteShadowEnabled(value) }
+    fun setPosterRouteShadowColor(value: String) = viewModelScope.launch { appPreferences.setPosterRouteShadowColor(value) }
+    fun setPosterRouteShadowSize(value: Float) = viewModelScope.launch { appPreferences.setPosterRouteShadowSize(value) }
 
     fun setRadarShowHistory(show: Boolean) {
         viewModelScope.launch {

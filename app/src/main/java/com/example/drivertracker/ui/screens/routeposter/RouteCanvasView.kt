@@ -27,7 +27,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import com.example.drivertracker.data.model.GpsPoint
 import kotlin.math.max
-import kotlin.math.min
 
 @Composable
 fun RouteCanvasView(
@@ -35,6 +34,7 @@ fun RouteCanvasView(
     preset: PosterPreset,
     showRouteLine: Boolean = true,
     routeLineColor: String = "AUTO",
+    effects: PosterEffects = PosterEffects(),
     customPhotoBitmap: ImageBitmap? = null,
     photoScale: Float = 1f,
     photoOffsetX: Float = 0f,
@@ -124,54 +124,27 @@ fun RouteCanvasView(
                     dstOffset = androidx.compose.ui.unit.IntOffset(left.toInt(), top.toInt()),
                     dstSize = androidx.compose.ui.unit.IntSize(finalW.toInt(), finalH.toInt())
                 )
-
-                drawRect(color = Color.Black.copy(alpha = 0.50f))
             }
         } else {
             drawPresetBackground(preset, width, height)
         }
 
         if (showRouteLine && gpsPoints.size >= 2) {
-            var minLat = Double.MAX_VALUE
-            var maxLat = -Double.MAX_VALUE
-            var minLng = Double.MAX_VALUE
-            var maxLng = -Double.MAX_VALUE
-
-            for (pt in gpsPoints) {
-                if (pt.lat < minLat) minLat = pt.lat
-                if (pt.lat > maxLat) maxLat = pt.lat
-                if (pt.lng < minLng) minLng = pt.lng
-                if (pt.lng > maxLng) maxLng = pt.lng
-            }
-
-            val latDiff = max(maxLat - minLat, 0.0001)
-            val lngDiff = max(maxLng - minLng, 0.0001)
-
-            val padX = width * 0.08f
-            val padTop = height * 0.15f
-            val padBottom = height * 0.24f
-
-            val availableW = width - (padX * 2f)
-            val availableH = height - padTop - padBottom
-
-            val scale = min(availableW / lngDiff, availableH / latDiff)
-
-            val trackW = (lngDiff * scale).toFloat()
-            val trackH = (latDiff * scale).toFloat()
-
-            val offsetX = padX + (availableW - trackW) / 2f
-            val offsetY = padTop + (availableH - trackH) / 2f
-
-        val mapped = gpsPoints.map { pt ->
-            val x = offsetX + ((pt.lng - minLng) * scale).toFloat()
-            val y = offsetY + ((maxLat - pt.lat) * scale).toFloat()
-            Offset(x, y) to pt.speed
-        }
+            val isStoryCanvas = height / width >= 1.4f
+            val mapped = RouteCanvasProjection.project(
+                gpsPoints = gpsPoints,
+                canvasWidth = width,
+                canvasHeight = height,
+                sidePaddingFraction = 0.08f,
+                topPaddingFraction = if (isStoryCanvas) 0.14f else 0.15f,
+                bottomPaddingFraction = if (isStoryCanvas) 0.22f else 0.24f
+            ).map { Offset(it.x, it.y) to it.speed }
 
         val isCustomColor = routeLineColor != "AUTO" && routeLineColor.isNotBlank()
         val customColorParsed = if (isCustomColor) {
             try { Color(android.graphics.Color.parseColor(routeLineColor)) } catch (_: Exception) { Color(0xFF00E5FF) }
         } else Color(0xFF00E5FF)
+        val effectScale = width / 360f
 
         for (i in 0 until mapped.size - 1) {
             val (p1, s1) = mapped[i]
@@ -188,13 +161,27 @@ fun RouteCanvasView(
                 }
             }
 
-            drawLine(
-                color = Color.Black.copy(alpha = 0.42f),
-                start = p1,
-                end = p2,
-                strokeWidth = 10f,
-                cap = StrokeCap.Round
-            )
+            if (effects.routeShadowEnabled) {
+                val shadowColor = parseEffectColor(effects.routeShadowColor, Color.Black)
+                val shadowOffset = effects.routeShadowSize * effectScale * 0.45f
+                drawLine(
+                    color = shadowColor.copy(alpha = 0.42f),
+                    start = p1 + Offset(shadowOffset, shadowOffset),
+                    end = p2 + Offset(shadowOffset, shadowOffset),
+                    strokeWidth = 6f + effects.routeShadowSize * effectScale * 2f,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            if (effects.routeOutlineEnabled) {
+                drawLine(
+                    color = parseEffectColor(effects.routeOutlineColor, Color.White),
+                    start = p1,
+                    end = p2,
+                    strokeWidth = 6f + effects.routeOutlineSize * effectScale * 2f,
+                    cap = StrokeCap.Round
+                )
+            }
 
             if (isCustomColor || speed > 30f) {
                 drawLine(
@@ -217,12 +204,14 @@ fun RouteCanvasView(
 
         if (mapped.isNotEmpty()) {
             val startPt = mapped.first().first
+            drawCircle(color = Color.Black.copy(alpha = 0.20f), radius = 10f, center = startPt + Offset(0f, 2f))
             drawCircle(color = Color(0xFF00E676).copy(alpha = 0.4f), radius = 14f, center = startPt)
             drawCircle(color = Color(0xFF00E676), radius = 10f, center = startPt)
         }
 
         if (mapped.size > 1) {
             val endPt = mapped.last().first
+            drawCircle(color = Color.Black.copy(alpha = 0.20f), radius = 10f, center = endPt + Offset(0f, 2f))
             drawCircle(color = Color(0xFFFF1744).copy(alpha = 0.4f), radius = 14f, center = endPt)
             drawCircle(color = Color(0xFFFF1744), radius = 10f, center = endPt)
         }
@@ -243,6 +232,9 @@ fun RouteCanvasView(
     }
     }
 }
+
+private fun parseEffectColor(value: String, fallback: Color): Color =
+    try { Color(android.graphics.Color.parseColor(value)) } catch (_: IllegalArgumentException) { fallback }
 
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawPresetBackground(
     preset: PosterPreset,

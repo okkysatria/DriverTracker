@@ -40,6 +40,18 @@ class AppPreferences(private val context: Context) {
         val KEY_POSTER_SHOW_AVG_SPEED = booleanPreferencesKey("poster_show_avg_speed")
         val KEY_POSTER_SHOW_MAX_SPEED = booleanPreferencesKey("poster_show_max_speed")
         val KEY_POSTER_ROUTE_LINE_COLOR = stringPreferencesKey("poster_route_line_color")
+        val KEY_POSTER_TEXT_OUTLINE_ENABLED = booleanPreferencesKey("poster_text_outline_enabled")
+        val KEY_POSTER_TEXT_OUTLINE_COLOR = stringPreferencesKey("poster_text_outline_color")
+        val KEY_POSTER_TEXT_OUTLINE_SIZE = floatPreferencesKey("poster_text_outline_size")
+        val KEY_POSTER_TEXT_SHADOW_ENABLED = booleanPreferencesKey("poster_text_shadow_enabled")
+        val KEY_POSTER_TEXT_SHADOW_COLOR = stringPreferencesKey("poster_text_shadow_color")
+        val KEY_POSTER_TEXT_SHADOW_SIZE = floatPreferencesKey("poster_text_shadow_size")
+        val KEY_POSTER_ROUTE_OUTLINE_ENABLED = booleanPreferencesKey("poster_route_outline_enabled")
+        val KEY_POSTER_ROUTE_OUTLINE_COLOR = stringPreferencesKey("poster_route_outline_color")
+        val KEY_POSTER_ROUTE_OUTLINE_SIZE = floatPreferencesKey("poster_route_outline_size")
+        val KEY_POSTER_ROUTE_SHADOW_ENABLED = booleanPreferencesKey("poster_route_shadow_enabled")
+        val KEY_POSTER_ROUTE_SHADOW_COLOR = stringPreferencesKey("poster_route_shadow_color")
+        val KEY_POSTER_ROUTE_SHADOW_SIZE = floatPreferencesKey("poster_route_shadow_size")
 
         @Volatile
         private var INSTANCE: AppPreferences? = null
@@ -136,6 +148,19 @@ class AppPreferences(private val context: Context) {
     val posterRouteLineColor: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[KEY_POSTER_ROUTE_LINE_COLOR] ?: "AUTO"
     }
+
+    val posterTextOutlineEnabled = context.dataStore.data.map { it[KEY_POSTER_TEXT_OUTLINE_ENABLED] ?: false }
+    val posterTextOutlineColor = context.dataStore.data.map { it[KEY_POSTER_TEXT_OUTLINE_COLOR] ?: "#000000" }
+    val posterTextOutlineSize = context.dataStore.data.map { it[KEY_POSTER_TEXT_OUTLINE_SIZE] ?: 1.5f }
+    val posterTextShadowEnabled = context.dataStore.data.map { it[KEY_POSTER_TEXT_SHADOW_ENABLED] ?: true }
+    val posterTextShadowColor = context.dataStore.data.map { it[KEY_POSTER_TEXT_SHADOW_COLOR] ?: "#000000" }
+    val posterTextShadowSize = context.dataStore.data.map { it[KEY_POSTER_TEXT_SHADOW_SIZE] ?: 2f }
+    val posterRouteOutlineEnabled = context.dataStore.data.map { it[KEY_POSTER_ROUTE_OUTLINE_ENABLED] ?: false }
+    val posterRouteOutlineColor = context.dataStore.data.map { it[KEY_POSTER_ROUTE_OUTLINE_COLOR] ?: "#FFFFFF" }
+    val posterRouteOutlineSize = context.dataStore.data.map { it[KEY_POSTER_ROUTE_OUTLINE_SIZE] ?: 2f }
+    val posterRouteShadowEnabled = context.dataStore.data.map { it[KEY_POSTER_ROUTE_SHADOW_ENABLED] ?: true }
+    val posterRouteShadowColor = context.dataStore.data.map { it[KEY_POSTER_ROUTE_SHADOW_COLOR] ?: "#000000" }
+    val posterRouteShadowSize = context.dataStore.data.map { it[KEY_POSTER_ROUTE_SHADOW_SIZE] ?: 2f }
 
     suspend fun setDarkMode(enabled: Boolean) {
         context.dataStore.edit { preferences ->
@@ -264,4 +289,17 @@ class AppPreferences(private val context: Context) {
             preferences[KEY_POSTER_ROUTE_LINE_COLOR] = color
         }
     }
+
+    suspend fun setPosterTextOutlineEnabled(value: Boolean) = context.dataStore.edit { it[KEY_POSTER_TEXT_OUTLINE_ENABLED] = value }
+    suspend fun setPosterTextOutlineColor(value: String) = context.dataStore.edit { it[KEY_POSTER_TEXT_OUTLINE_COLOR] = value }
+    suspend fun setPosterTextOutlineSize(value: Float) = context.dataStore.edit { it[KEY_POSTER_TEXT_OUTLINE_SIZE] = value }
+    suspend fun setPosterTextShadowEnabled(value: Boolean) = context.dataStore.edit { it[KEY_POSTER_TEXT_SHADOW_ENABLED] = value }
+    suspend fun setPosterTextShadowColor(value: String) = context.dataStore.edit { it[KEY_POSTER_TEXT_SHADOW_COLOR] = value }
+    suspend fun setPosterTextShadowSize(value: Float) = context.dataStore.edit { it[KEY_POSTER_TEXT_SHADOW_SIZE] = value }
+    suspend fun setPosterRouteOutlineEnabled(value: Boolean) = context.dataStore.edit { it[KEY_POSTER_ROUTE_OUTLINE_ENABLED] = value }
+    suspend fun setPosterRouteOutlineColor(value: String) = context.dataStore.edit { it[KEY_POSTER_ROUTE_OUTLINE_COLOR] = value }
+    suspend fun setPosterRouteOutlineSize(value: Float) = context.dataStore.edit { it[KEY_POSTER_ROUTE_OUTLINE_SIZE] = value }
+    suspend fun setPosterRouteShadowEnabled(value: Boolean) = context.dataStore.edit { it[KEY_POSTER_ROUTE_SHADOW_ENABLED] = value }
+    suspend fun setPosterRouteShadowColor(value: String) = context.dataStore.edit { it[KEY_POSTER_ROUTE_SHADOW_COLOR] = value }
+    suspend fun setPosterRouteShadowSize(value: Float) = context.dataStore.edit { it[KEY_POSTER_ROUTE_SHADOW_SIZE] = value }
 }

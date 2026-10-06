@@ -84,15 +84,16 @@ fun RekamOrderScreen(
         Manifest.permission.ACCESS_COARSE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED
 
-    LaunchedEffect(hasLocationPermission) {
-        if (hasLocationPermission) viewModel.startLocationUpdates()
-        else locationPermissionState.launchMultiplePermissionRequest()
-    }
-    LaunchedEffect(notificationPermissionState.allPermissionsGranted) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            !notificationPermissionState.allPermissionsGranted
-        ) {
-            notificationPermissionState.launchMultiplePermissionRequest()
+    LaunchedEffect(hasLocationPermission, notificationPermissionState.allPermissionsGranted) {
+        if (hasLocationPermission) {
+            viewModel.startLocationUpdates()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                !notificationPermissionState.allPermissionsGranted
+            ) {
+                notificationPermissionState.launchMultiplePermissionRequest()
+            }
+        } else {
+            locationPermissionState.launchMultiplePermissionRequest()
         }
     }
 

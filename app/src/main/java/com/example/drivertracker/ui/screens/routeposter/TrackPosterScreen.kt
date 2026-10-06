@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -30,9 +29,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -40,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.drivertracker.data.local.entity.OrderRecord
 import com.example.drivertracker.data.model.GpsPoint
 import com.example.drivertracker.ui.MainViewModel
+import com.example.drivertracker.ui.screens.settings.PosterSettingsContent
 import com.example.drivertracker.ui.utils.toRupiahString
 import org.json.JSONArray
 import java.io.File
@@ -54,6 +60,7 @@ fun TrackPosterScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val posterDraft by viewModel.posterDraft.collectAsStateWithLifecycle()
 
     val allOrders by viewModel.allOrders.collectAsStateWithLifecycle()
     val liveGpsPoints by viewModel.gpsPoints.collectAsStateWithLifecycle()
@@ -72,6 +79,32 @@ fun TrackPosterScreen(
     val posterShowAvgSpeed by viewModel.posterShowAvgSpeed.collectAsStateWithLifecycle()
     val posterShowMaxSpeed by viewModel.posterShowMaxSpeed.collectAsStateWithLifecycle()
     val posterRouteLineColor by viewModel.posterRouteLineColor.collectAsStateWithLifecycle()
+    val textOutlineEnabled by viewModel.posterTextOutlineEnabled.collectAsStateWithLifecycle()
+    val textOutlineColor by viewModel.posterTextOutlineColor.collectAsStateWithLifecycle()
+    val textOutlineSize by viewModel.posterTextOutlineSize.collectAsStateWithLifecycle()
+    val textShadowEnabled by viewModel.posterTextShadowEnabled.collectAsStateWithLifecycle()
+    val textShadowColor by viewModel.posterTextShadowColor.collectAsStateWithLifecycle()
+    val textShadowSize by viewModel.posterTextShadowSize.collectAsStateWithLifecycle()
+    val routeOutlineEnabled by viewModel.posterRouteOutlineEnabled.collectAsStateWithLifecycle()
+    val routeOutlineColor by viewModel.posterRouteOutlineColor.collectAsStateWithLifecycle()
+    val routeOutlineSize by viewModel.posterRouteOutlineSize.collectAsStateWithLifecycle()
+    val routeShadowEnabled by viewModel.posterRouteShadowEnabled.collectAsStateWithLifecycle()
+    val routeShadowColor by viewModel.posterRouteShadowColor.collectAsStateWithLifecycle()
+    val routeShadowSize by viewModel.posterRouteShadowSize.collectAsStateWithLifecycle()
+    val posterEffects = PosterEffects(
+        textOutlineEnabled = textOutlineEnabled,
+        textOutlineColor = textOutlineColor,
+        textOutlineSize = textOutlineSize,
+        textShadowEnabled = textShadowEnabled,
+        textShadowColor = textShadowColor,
+        textShadowSize = textShadowSize,
+        routeOutlineEnabled = routeOutlineEnabled,
+        routeOutlineColor = routeOutlineColor,
+        routeOutlineSize = routeOutlineSize,
+        routeShadowEnabled = routeShadowEnabled,
+        routeShadowColor = routeShadowColor,
+        routeShadowSize = routeShadowSize
+    )
 
     val elementVisibility = remember(
         posterShowAppName, posterShowDriverName, posterShowDistance,
@@ -90,16 +123,18 @@ fun TrackPosterScreen(
         )
     }
 
-    var selectedDateMode by remember { mutableStateOf("LIVE") }
+    val selectedDateMode = posterDraft.selectedDateMode
     var showDatePickerDialog by remember { mutableStateOf(false) }
-    var selectedCustomDateMillis by remember { mutableStateOf<Long?>(null) }
-    var selectedAspectRatio by remember { mutableStateOf(PosterAspectRatio.SQUARE_1_1) }
-    var selectedPreset by remember { mutableStateOf(PosterPreset.NIGHT) }
-
-    var customPhotoBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var photoScale by remember { mutableFloatStateOf(1f) }
-    var photoOffsetX by remember { mutableFloatStateOf(0f) }
-    var photoOffsetY by remember { mutableFloatStateOf(0f) }
+    var showPosterSettings by remember { mutableStateOf(false) }
+    var showRouteMenu by remember { mutableStateOf(false) }
+    var showAspectMenu by remember { mutableStateOf(false) }
+    val selectedCustomDateMillis = posterDraft.selectedCustomDateMillis
+    val selectedAspectRatio = posterDraft.selectedAspectRatio
+    val selectedPreset = posterDraft.selectedPreset
+    val customPhotoBitmap = posterDraft.customPhotoBitmap
+    val photoScale = posterDraft.photoScale
+    val photoOffsetX = posterDraft.photoOffsetX
+    val photoOffsetY = posterDraft.photoOffsetY
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -108,11 +143,15 @@ fun TrackPosterScreen(
             try {
                 val bitmap = loadRotatedBitmap(context, it)
                 if (bitmap != null) {
-                    customPhotoBitmap = bitmap
-                    selectedPreset = PosterPreset.CUSTOM_PHOTO
-                    photoScale = 1f
-                    photoOffsetX = 0f
-                    photoOffsetY = 0f
+                    viewModel.updatePosterDraft { draft ->
+                        draft.copy(
+                            customPhotoBitmap = bitmap,
+                            selectedPreset = PosterPreset.CUSTOM_PHOTO,
+                            photoScale = 1f,
+                            photoOffsetX = 0f,
+                            photoOffsetY = 0f
+                        )
+                    }
                 } else {
                     Toast.makeText(context, "Gagal memuat foto", Toast.LENGTH_SHORT).show()
                 }
@@ -189,79 +228,112 @@ fun TrackPosterScreen(
             )
 
             Surface(
-                shape = CircleShape,
+                shape = RoundedCornerShape(50),
                 color = Color(0xFF00AA13).copy(alpha = 0.15f)
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.Share,
-                    contentDescription = null,
-                    tint = Color(0xFF00AA13),
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .size(24.dp)
-                )
+                IconButton(
+                    onClick = { showPosterSettings = true },
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Menu,
+                        contentDescription = "Pengaturan poster",
+                        tint = Color(0xFF00AA13)
+                    )
+                }
             }
         }
 
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = "Pilih rute",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
+        val dateLabel = remember(selectedDateMode, allOrders) {
+            if (selectedDateMode != "LIVE" && selectedDateMode.isNotBlank()) {
+                try {
+                    val parsedDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(selectedDateMode)
+                    if (parsedDate != null) {
+                        val displayDate = SimpleDateFormat("dd MMM yyyy", Locale.forLanguageTag("id-ID")).format(parsedDate)
+                        val count = allOrders.count { it.tanggal == selectedDateMode }
+                        if (count > 0) "$displayDate · $count pesanan" else displayDate
+                    } else selectedDateMode
+                } catch (_: Exception) {
+                    selectedDateMode
+                }
+            } else "Hari ini"
+        }
 
-            val dateLabel = remember(selectedDateMode, allOrders) {
-                if (selectedDateMode != "LIVE" && selectedDateMode.isNotBlank()) {
-                    try {
-                        val parsedDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(selectedDateMode)
-                        if (parsedDate != null) {
-                            val disp = SimpleDateFormat("dd MMM yyyy", Locale.forLanguageTag("id-ID")).format(parsedDate)
-                            val count = allOrders.count { it.tanggal == selectedDateMode }
-                            if (count > 0) "$disp ($count pesanan)" else disp
-                        } else {
-                            selectedDateMode
-                        }
-                    } catch (_: Exception) {
-                        selectedDateMode
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Pilih rute", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+                Box {
+                    OutlinedButton(
+                        onClick = { showRouteMenu = true },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(dateLabel, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                        Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
                     }
-                } else {
-                    "Pilih tanggal"
+                    DropdownMenu(expanded = showRouteMenu, onDismissRequest = { showRouteMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Hari ini") },
+                            leadingIcon = { Icon(Icons.Rounded.Today, contentDescription = null) },
+                            onClick = {
+                                viewModel.updatePosterDraft { it.copy(selectedDateMode = "LIVE") }
+                                showRouteMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Pilih tanggal…") },
+                            leadingIcon = { Icon(Icons.Rounded.CalendarMonth, contentDescription = null) },
+                            onClick = {
+                                showRouteMenu = false
+                                showDatePickerDialog = true
+                            }
+                        )
+                    }
                 }
             }
 
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(end = 8.dp)
-            ) {
-                item {
-                    FilterChip(
-                        selected = selectedDateMode == "LIVE",
-                        onClick = { selectedDateMode = "LIVE" },
-                        label = { Text("Hari Ini", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF00AA13),
-                            selectedLabelColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = selectedDateMode != "LIVE",
-                        onClick = { showDatePickerDialog = true },
-                        label = { Text(dateLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                        leadingIcon = { Icon(Icons.Rounded.CalendarMonth, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF00AA13),
-                            selectedLabelColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Rasio poster", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+                Box {
+                    OutlinedButton(
+                        onClick = { showAspectMenu = true },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            if (selectedAspectRatio == PosterAspectRatio.SQUARE_1_1) Icons.Rounded.CropSquare else Icons.Rounded.CropPortrait,
+                            contentDescription = null,
+                            modifier = Modifier.size(17.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(selectedAspectRatio.label, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp)
+                        Icon(Icons.Rounded.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = showAspectMenu, onDismissRequest = { showAspectMenu = false }) {
+                        PosterAspectRatio.entries.forEach { ratio ->
+                            DropdownMenuItem(
+                                text = { Text(ratio.label) },
+                                leadingIcon = {
+                                    Icon(
+                                        if (ratio == PosterAspectRatio.SQUARE_1_1) Icons.Rounded.CropSquare else Icons.Rounded.CropPortrait,
+                                        contentDescription = null
+                                    )
+                                },
+                                trailingIcon = { if (selectedAspectRatio == ratio) Icon(Icons.Rounded.Check, contentDescription = null) },
+                                onClick = {
+                                    viewModel.updatePosterDraft { it.copy(selectedAspectRatio = ratio) }
+                                    showAspectMenu = false
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -276,11 +348,12 @@ fun TrackPosterScreen(
                     TextButton(
                         onClick = {
                             datePickerState.selectedDateMillis?.let { millis ->
-                                selectedCustomDateMillis = millis
-                                val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply {
+                                val formattedDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply {
                                     timeZone = TimeZone.getTimeZone("UTC")
+                                }.format(Date(millis))
+                                viewModel.updatePosterDraft {
+                                    it.copy(selectedCustomDateMillis = millis, selectedDateMode = formattedDate)
                                 }
-                                selectedDateMode = sdf.format(Date(millis))
                             }
                             showDatePickerDialog = false
                         }
@@ -295,61 +368,6 @@ fun TrackPosterScreen(
                 }
             ) {
                 DatePicker(state = datePickerState)
-            }
-        }
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = "Rasio poster",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(end = 8.dp)
-            ) {
-                items(PosterAspectRatio.entries.toList()) { ratio ->
-                    val isSelected = selectedAspectRatio == ratio
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { selectedAspectRatio = ratio },
-                        label = {
-                            Text(
-                                text = ratio.label,
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = if (ratio == PosterAspectRatio.SQUARE_1_1) Icons.Rounded.CropSquare else Icons.Rounded.CropPortrait,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF00AA13),
-                            selectedLabelColor = Color.White,
-                            selectedLeadingIconColor = Color.White,
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            labelColor = MaterialTheme.colorScheme.onSurface,
-                            iconColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
-                            selected = isSelected,
-                            borderColor = MaterialTheme.colorScheme.outlineVariant,
-                            selectedBorderColor = Color(0xFF00AA13)
-                        )
-                    )
-                }
             }
         }
 
@@ -369,9 +387,9 @@ fun TrackPosterScreen(
                 if (selectedPreset == PosterPreset.CUSTOM_PHOTO) {
                     TextButton(
                         onClick = {
-                            photoScale = 1f
-                            photoOffsetX = 0f
-                            photoOffsetY = 0f
+                            viewModel.updatePosterDraft {
+                                it.copy(photoScale = 1f, photoOffsetX = 0f, photoOffsetY = 0f)
+                            }
                         },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                     ) {
@@ -390,12 +408,12 @@ fun TrackPosterScreen(
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 if (preset == PosterPreset.CUSTOM_PHOTO) {
-                                    selectedPreset = preset
+                                    viewModel.updatePosterDraft { it.copy(selectedPreset = preset) }
                                     photoPickerLauncher.launch(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                     )
                                 } else {
-                                    selectedPreset = preset
+                                    viewModel.updatePosterDraft { it.copy(selectedPreset = preset) }
                                 }
                             }
                             .border(
@@ -435,14 +453,15 @@ fun TrackPosterScreen(
                     preset = selectedPreset,
                     showRouteLine = posterShowRouteLine,
                     routeLineColor = posterRouteLineColor,
+                    effects = posterEffects,
                     customPhotoBitmap = customPhotoBitmap?.asImageBitmap(),
                     photoScale = photoScale,
                     photoOffsetX = photoOffsetX,
                     photoOffsetY = photoOffsetY,
                     onTransformChanged = { scale, offX, offY ->
-                        photoScale = scale
-                        photoOffsetX = offX
-                        photoOffsetY = offY
+                        viewModel.updatePosterDraft {
+                            it.copy(photoScale = scale, photoOffsetX = offX, photoOffsetY = offY)
+                        }
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -455,28 +474,31 @@ fun TrackPosterScreen(
                             .padding(16.dp)
                     ) {
                         if (posterShowAppName) {
-                            Text(
+                            PosterPreviewText(
                                 text = "DRIVER TRACKER",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = if (isLightTheme) Color(0xFF00AA13) else Color(0xFF00FF66)
+                                color = if (isLightTheme) Color(0xFF00AA13) else Color(0xFF00FF66),
+                                effects = posterEffects
                             )
                         }
                         if (posterShowDriverName) {
-                            Text(
+                            PosterPreviewText(
                                 text = "DRIVER: ${posterData.driverName.uppercase()}",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isLightTheme) Color(0xFF1A202C) else Color.White
+                                color = if (isLightTheme) Color(0xFF1A202C) else Color.White,
+                                effects = posterEffects
                             )
                         }
                     }
                 }
 
-                Text(
+                PosterPreviewText(
                     text = posterData.dateFormatted,
                     fontSize = 11.sp,
                     color = if (isLightTheme) Color(0xFF718096) else Color.White.copy(alpha = 0.8f),
+                    effects = posterEffects,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(16.dp)
@@ -490,7 +512,8 @@ fun TrackPosterScreen(
                             .fillMaxWidth()
                             .padding(12.dp),
                         shape = RoundedCornerShape(16.dp),
-                        color = Color(0xDD0F141C)
+                        color = Color(0xDD0F141C),
+                        shadowElevation = 4.dp
                     ) {
                         Column(
                             modifier = Modifier.padding(12.dp),
@@ -596,7 +619,8 @@ fun TrackPosterScreen(
                         photoOffsetY = photoOffsetY,
                         data = posterData,
                         visibility = elementVisibility,
-                        routeLineColor = posterRouteLineColor
+                        routeLineColor = posterRouteLineColor,
+                        effects = posterEffects
                     )
                     val isTrans = selectedPreset == PosterPreset.TRANSPARENT
                     val uri = saveBitmapToGallery(context, bitmap, "DriverTracker_Poster_${System.currentTimeMillis()}")
@@ -652,7 +676,8 @@ fun TrackPosterScreen(
                         photoOffsetY = photoOffsetY,
                         data = posterData,
                         visibility = elementVisibility,
-                        routeLineColor = posterRouteLineColor
+                        routeLineColor = posterRouteLineColor,
+                        effects = posterEffects
                     )
                     sharePosterImage(context, bitmap)
                 },
@@ -665,6 +690,30 @@ fun TrackPosterScreen(
                 Icon(imageVector = Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text("Bagikan gambar", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+
+    if (showPosterSettings) {
+        ModalBottomSheet(
+            onDismissRequest = { showPosterSettings = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Pengaturan poster rute",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                PosterSettingsContent(viewModel)
             }
         }
     }
@@ -689,6 +738,52 @@ private fun parseGpsPointsFromJson(jsonStr: String): List<GpsPoint> {
     } catch (_: Exception) {}
     return list
 }
+
+@Composable
+private fun PosterPreviewText(
+    text: String,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    color: Color,
+    effects: PosterEffects,
+    modifier: Modifier = Modifier,
+    fontWeight: FontWeight = FontWeight.Normal
+) {
+    val density = LocalDensity.current
+    val outlineWidth = with(density) { effects.textOutlineSize.dp.toPx() * 2f }
+    val shadowBlur = with(density) { effects.textShadowSize.dp.toPx() * 2f }
+    val shadowOffset = with(density) { effects.textShadowSize.dp.toPx() }
+    val shadowColor = posterEffectColor(effects.textShadowColor, Color.Black).copy(alpha = 0.47f)
+
+    Box(modifier = modifier) {
+        if (effects.textOutlineEnabled) {
+            Text(
+                text = text,
+                fontSize = fontSize,
+                fontWeight = fontWeight,
+                color = posterEffectColor(effects.textOutlineColor, Color.Black),
+                style = TextStyle(drawStyle = Stroke(width = outlineWidth))
+            )
+        }
+        Text(
+            text = text,
+            fontSize = fontSize,
+            fontWeight = fontWeight,
+            color = color,
+            style = TextStyle(
+                shadow = if (effects.textShadowEnabled) {
+                    Shadow(
+                        color = shadowColor,
+                        offset = Offset(shadowOffset * 0.35f, shadowOffset),
+                        blurRadius = shadowBlur
+                    )
+                } else null
+            )
+        )
+    }
+}
+
+private fun posterEffectColor(value: String, fallback: Color): Color =
+    try { Color(android.graphics.Color.parseColor(value)) } catch (_: IllegalArgumentException) { fallback }
 
 private fun saveBitmapToGallery(context: Context, bitmap: Bitmap, fileName: String): Uri? {
     val contentValues = ContentValues().apply {
